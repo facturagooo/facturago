@@ -1,0 +1,166 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --grid-template-columns-24: repeat(24, minmax(0, 1fr));
+}
+
+@layer base {
+  body {
+    @apply font-sans;
+  }
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="date"],
+  textarea,
+  select {
+    @apply border border-neutral-300 bg-white px-3 py-2 shadow-sm;
+  }
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out forwards;
+}
+
+.markdown-body {
+  @apply text-slate-700 leading-relaxed;
+}
+
+.markdown-body h1 { @apply text-2xl font-bold mb-4 mt-6 text-slate-900; }
+.markdown-body h2 { @apply text-xl font-bold mb-3 mt-5 text-slate-900; }
+.markdown-body h3 { @apply text-lg font-bold mb-2 mt-4 text-slate-900; }
+.markdown-body p { @apply mb-4; }
+.markdown-body ul { @apply list-disc pl-6 mb-4; }
+.markdown-body ol { @apply list-decimal pl-6 mb-4; }
+.markdown-body li { @apply mb-1; }
+.markdown-body blockquote { @apply border-l-4 border-slate-200 pl-4 italic mb-4; }
+.markdown-body code { @apply bg-slate-100 px-1 rounded text-sm font-mono; }
+.markdown-body pre { @apply bg-slate-900 text-slate-100 p-4 rounded-xl mb-4 overflow-x-auto; }
+.markdown-body pre code { @apply bg-transparent p-0 text-inherit; }
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media print {
+  /* Hide standard UI elements */
+  nav, sidebar, header, main, .bg-emerald-900, .sticky, button, select, input {
+    display: none !important;
+  }
+  
+  /* Override absolute/fixed layout wrappers to prevent clipping */
+  body, html, #root, .flex, .overflow-hidden {
+    overflow: visible !important;
+    height: auto !important;
+    background: white !important;
+  }
+  
+  /* Reset fixed container for modal */
+  .fixed {
+    position: static !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    width: auto !important;
+    height: auto !important;
+  }
+
+  /* Hide modal chrome (non-printable divs inside the report modal) */
+  .max-w-6xl {
+    max-width: none !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
+  }
+  
+  .max-w-6xl > div:not(#printable-report) {
+    display: none !important;
+  }
+
+  /* Show the printable report exclusively */
+  #printable-report {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10px !important;
+    background: white !important;
+    color: black !important;
+  }
+  
+  #printable-report * {
+    visibility: visible !important;
+  }
+}
+
+/* Barcode Scanner & Laser Styling */
+@keyframes scanLaser {
+  0% { top: 10%; opacity: 0.8; }
+  50% { top: 90%; opacity: 1; }
+  100% { top: 10%; opacity: 0.8; }
+}
+
+.animate-laser-scan {
+  animation: scanLaser 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+#barcode-camera-reader {
+  width: 100% !important;
+  height: 100% !important;
+  position: relative !important;
+  border: none !important;
+  background: #020617 !important;
+}
+
+#barcode-camera-reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 1rem !important;
+}
+
+#barcode-camera-reader canvas {
+  display: none !important;
+}
+
