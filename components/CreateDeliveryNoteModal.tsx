@@ -32,12 +32,14 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [subject, setSubject] = useState('');
     const [purchaseOrderNumber, setPurchaseOrderNumber] = useState('');
+    const [reference, setReference] = useState('');
     const [notes, setNotes] = useState('');
     const [calculationMode, setCalculationMode] = useState<'piece' | 'm2' | 'ml' | 'kg' | 'days'>('piece');
     const [lineItems, setLineItems] = useState<LineItem[]>([]);
 
     const [showSubjectField, setShowSubjectField] = useState(false);
     const [showPurchaseOrderField, setShowPurchaseOrderField] = useState(false);
+    const [showReferenceField, setShowReferenceField] = useState(false);
     const [showPaymentMethodField, setShowPaymentMethodField] = useState(false);
     
     const [selectedProductId, setSelectedProductId] = useState('');
@@ -82,6 +84,10 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                 setPurchaseOrderNumber(initialPO);
                 setShowPurchaseOrderField(!!initialPO);
 
+                const initialRef = noteToEdit.reference || noteToEdit.lineItems[0]?.reference || '';
+                setReference(initialRef);
+                setShowReferenceField(!!initialRef);
+
                 setNotes(noteToEdit.notes || '');
                 // Read calculationMode from first line item
                 setCalculationMode(noteToEdit.lineItems[0]?.calculationMode || 'piece');
@@ -108,6 +114,8 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                 setShowSubjectField(false);
                 setPurchaseOrderNumber('');
                 setShowPurchaseOrderField(false);
+                setReference('');
+                setShowReferenceField(false);
                 setNotes('');
                 setLineItems([]);
                 setPaymentAmount(0);
@@ -334,7 +342,8 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                 checkNumber: (showPaymentMethodField && paymentMethod === 'Chèque') ? checkNumber : undefined,
                 bankName: (showPaymentMethodField && paymentMethod === 'Chèque') ? bankName : undefined,
                 notes,
-                purchaseOrderNumber: showPurchaseOrderField ? purchaseOrderNumber : undefined
+                purchaseOrderNumber: showPurchaseOrderField ? purchaseOrderNumber : undefined,
+                reference: showReferenceField ? reference : undefined
             };
         }
 
@@ -345,6 +354,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                 clientId, clientName: clientNameDisplay, date, 
                 subject: showSubjectField ? subject : undefined, 
                 purchaseOrderNumber: showPurchaseOrderField ? purchaseOrderNumber : undefined, 
+                reference: showReferenceField ? reference : undefined,
                 notes, 
                 lineItems: updatedLineItems, status: 'Livré',
                 subTotal: totals.subTotal, vatAmount: totals.vatAmount, totalAmount: totals.totalTTC,
@@ -447,6 +457,32 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                                     className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
                                 >
                                     <Plus size={14} /> {t('addPurchaseOrderNumber')}
+                                </button>
+                            </div>
+                        )}
+
+                        {showReferenceField ? (
+                            <div className="space-y-1">
+                                <label className="block text-sm font-bold text-slate-700 ml-1">{t('reference')}</label>
+                                <div className="relative">
+                                    <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder={t('reference')} className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12 pr-10"/>
+                                    <button 
+                                        type="button"
+                                        onClick={() => { setReference(''); setShowReferenceField(false); }}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-end pb-2">
+                                <button 
+                                    type="button"
+                                    onClick={() => setShowReferenceField(true)}
+                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                >
+                                    <Plus size={14} /> {t('addReference')}
                                 </button>
                             </div>
                         )}

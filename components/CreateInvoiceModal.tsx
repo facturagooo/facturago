@@ -34,7 +34,9 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
     const [dueDate, setDueDate] = useState('');
     const [subject, setSubject] = useState('');
     const [purchaseOrderNumber, setPurchaseOrderNumber] = useState('');
+    const [reference, setReference] = useState('');
     const [showPOField, setShowPOField] = useState(false);
+    const [showReferenceField, setShowReferenceField] = useState(false);
     const [showDueDateField, setShowDueDateField] = useState(false);
     const [showSubjectField, setShowSubjectField] = useState(false);
     const [showPaymentMethodField, setShowPaymentMethodField] = useState(false);
@@ -87,6 +89,9 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                 const po = invoiceToEdit.purchaseOrderNumber || invoiceToEdit.lineItems[0]?.purchaseOrderNumber || '';
                 setPurchaseOrderNumber(po);
                 setShowPOField(!!po);
+                const ref = invoiceToEdit.reference || invoiceToEdit.lineItems[0]?.reference || '';
+                setReference(ref);
+                setShowReferenceField(!!ref);
                 const pm = invoiceToEdit.paymentMethod || invoiceToEdit.lineItems[0]?.paymentMethod || '';
                 setInvoicePaymentMethod(pm);
                 setShowPaymentMethodField(!!pm);
@@ -117,6 +122,8 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                 setShowSubjectField(false);
                 setPurchaseOrderNumber('');
                 setShowPOField(!!prefilledPO);
+                setReference('');
+                setShowReferenceField(false);
                 setInvoicePaymentMethod('');
                 setShowPaymentMethodField(false);
                 setCheckNumber('');
@@ -134,6 +141,10 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                 if (prefilledOrder) {
                     setPurchaseOrderNumber(prefilledOrder.documentId || prefilledOrder.id);
                     setShowPOField(true);
+                    if (prefilledOrder.reference) {
+                        setReference(prefilledOrder.reference);
+                        setShowReferenceField(true);
+                    }
                     setSubject(prefilledOrder.subject || '');
                     setShowSubjectField(!!prefilledOrder.subject);
                     setNotes(prefilledOrder.notes || '');
@@ -428,6 +439,7 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                 calculationMode,
                 subject: showSubjectField ? subject : undefined,
                 purchaseOrderNumber: showPOField ? purchaseOrderNumber : undefined,
+                reference: showReferenceField ? reference : undefined,
                 dueDate: showDueDateField ? dueDate : undefined,
                 notes,
                 paymentMethod: showPaymentMethodField ? invoicePaymentMethod : undefined,
@@ -442,6 +454,7 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
             dueDate: showDueDateField ? dueDate : undefined, 
             subject: showSubjectField ? subject : undefined, 
             purchaseOrderNumber: showPOField ? purchaseOrderNumber : undefined,
+            reference: showReferenceField ? reference : undefined,
             paymentMethod: showPaymentMethodField ? invoicePaymentMethod : undefined,
             checkNumber: (showPaymentMethodField && invoicePaymentMethod === 'Chèque') ? checkNumber : undefined,
             bankName: (showPaymentMethodField && invoicePaymentMethod === 'Chèque') ? bankName : undefined,
@@ -579,7 +592,7 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                                         className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12 pr-10"
                                     />
                                     <button 
-                                        type="button"
+                                        type="button" 
                                         onClick={() => { setPurchaseOrderNumber(''); setShowPOField(false); }}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
                                     >
@@ -595,6 +608,37 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                                     className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
                                 >
                                     <Plus size={14} /> {t('addPurchaseOrderNumber')}
+                                </button>
+                            </div>
+                        )}
+                        {showReferenceField ? (
+                            <div className="space-y-1">
+                                <label className="block text-sm font-bold text-slate-700 ml-1">{t('reference')}</label>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        value={reference} 
+                                        onChange={(e) => setReference(e.target.value)} 
+                                        placeholder={t('reference')} 
+                                        className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12 pr-10"
+                                    />
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setReference(''); setShowReferenceField(false); }}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-end pb-2">
+                                <button 
+                                    type="button"
+                                    onClick={() => setShowReferenceField(true)}
+                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                >
+                                    <Plus size={14} /> {t('addReference')}
                                 </button>
                             </div>
                         )}

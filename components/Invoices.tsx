@@ -76,9 +76,13 @@ const Invoices: React.FC<InvoicesProps> = ({ invoices, onUpdateInvoiceStatus, on
     const itemsPerPage = 10;
     const filteredInvoices = invoices.filter(invoice => {
         const term = searchTerm.toLowerCase();
+        const ref = (invoice.reference || invoice.lineItems?.[0]?.reference || '').toLowerCase();
+        const po = (invoice.purchaseOrderNumber || invoice.lineItems?.[0]?.purchaseOrderNumber || '').toLowerCase();
         return (
             (invoice.documentId || invoice.id).toLowerCase().includes(term) ||
-            (invoice.clientName || '').toLowerCase().includes(term)
+            (invoice.clientName || '').toLowerCase().includes(term) ||
+            ref.includes(term) ||
+            po.includes(term)
         );
     });
     const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
@@ -431,7 +435,14 @@ const Invoices: React.FC<InvoicesProps> = ({ invoices, onUpdateInvoiceStatus, on
                                     const remaining = invoice.amount - (invoice.amountPaid || 0);
                                     return (
                                     <tr key={invoice.id} className="hover:bg-emerald-50/60 transition-colors duration-200">
-                                        <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 rtl:text-right">{invoice.documentId || invoice.id}</td>
+                                        <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 rtl:text-right">
+                                            <div>{invoice.documentId || invoice.id}</div>
+                                            {(invoice.reference || invoice.lineItems?.[0]?.reference) && (
+                                                <div className="text-xs text-slate-400 font-normal mt-0.5 font-mono">
+                                                    {invoice.reference || invoice.lineItems?.[0]?.reference}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="whitespace-nowrap px-6 py-4 text-sm text-neutral-500 rtl:text-right">{new Date(invoice.date).toLocaleDateString('fr-FR')}</td>
                                         <td className="whitespace-nowrap px-6 py-4 text-sm text-neutral-600 max-w-[120px] truncate rtl:text-right">{invoice.clientName}</td>
                                         <td className="whitespace-nowrap px-6 py-4 text-sm text-neutral-900 font-medium rtl:text-right">{invoice.amount.toLocaleString('fr-FR', { style: 'currency', currency: companySettings?.defaultCurrencyCode || 'MAD' })}</td>
@@ -476,6 +487,11 @@ const Invoices: React.FC<InvoicesProps> = ({ invoices, onUpdateInvoiceStatus, on
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <p className="text-xs font-black text-emerald-600">{invoice.documentId || invoice.id}</p>
+                                                {(invoice.reference || invoice.lineItems?.[0]?.reference) && (
+                                                    <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono">
+                                                        Réf: {invoice.reference || invoice.lineItems?.[0]?.reference}
+                                                    </span>
+                                                )}
                                                 <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-bold ${statusColors[invoice.status]}`}>
                                                     {invoice.status}
                                                 </span>

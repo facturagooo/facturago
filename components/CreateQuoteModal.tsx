@@ -34,6 +34,7 @@ const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({ isOpen, onClose, on
     const [checkNumber, setCheckNumber] = useState('');
     const [bankName, setBankName] = useState('');
     const [purchaseOrderNumber, setPurchaseOrderNumber] = useState('');
+    const [reference, setReference] = useState('');
     const [notes, setNotes] = useState('');
     const [calculationMode, setCalculationMode] = useState<'piece' | 'm2' | 'ml' | 'kg' | 'days'>('piece');
     const [lineItems, setLineItems] = useState<LineItem[]>([]);
@@ -41,6 +42,7 @@ const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({ isOpen, onClose, on
     const [showSubjectField, setShowSubjectField] = useState(false);
     const [showExpiryDateField, setShowExpiryDateField] = useState(false);
     const [showPurchaseOrderField, setShowPurchaseOrderField] = useState(false);
+    const [showReferenceField, setShowReferenceField] = useState(false);
     const [showPaymentMethodField, setShowPaymentMethodField] = useState(false);
     
     const [selectedProductId, setSelectedProductId] = useState('');
@@ -93,6 +95,10 @@ const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({ isOpen, onClose, on
                 setPurchaseOrderNumber(initialPO);
                 setShowPurchaseOrderField(!!initialPO);
 
+                const initialRef = quoteToEdit.reference || quoteToEdit.lineItems[0]?.reference || '';
+                setReference(initialRef);
+                setShowReferenceField(!!initialRef);
+
                 setNotes(quoteToEdit.notes || '');
                 // Read calculationMode from first line item
                 setCalculationMode(quoteToEdit.lineItems[0]?.calculationMode || 'piece');
@@ -121,6 +127,8 @@ const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({ isOpen, onClose, on
                 setBankName('');
                 setPurchaseOrderNumber('');
                 setShowPurchaseOrderField(false);
+                setReference('');
+                setShowReferenceField(false);
                 setNotes('');
                 setLineItems([]);
                 setTempVat(companySettings?.defaultTva ?? (language === 'es' ? 21 : 20));
@@ -292,6 +300,8 @@ const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({ isOpen, onClose, on
                 calculationMode,
                 subject: showSubjectField ? subject : undefined,
                 expiryDate: showExpiryDateField ? expiryDate : undefined,
+                reference: showReferenceField ? reference : undefined,
+                purchaseOrderNumber: showPurchaseOrderField ? purchaseOrderNumber : undefined,
                 notes,
                 paymentMethod: showPaymentMethodField ? paymentMethod : undefined,
                 checkNumber: (showPaymentMethodField && paymentMethod === 'Chèque') ? checkNumber : undefined,
@@ -308,6 +318,7 @@ const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({ isOpen, onClose, on
             checkNumber: (showPaymentMethodField && paymentMethod === 'Chèque') ? checkNumber : undefined,
             bankName: (showPaymentMethodField && paymentMethod === 'Chèque') ? bankName : undefined,
             purchaseOrderNumber: showPurchaseOrderField ? purchaseOrderNumber : undefined,
+            reference: showReferenceField ? reference : undefined,
             notes,
             lineItems: updatedLineItems,
             status: quoteToEdit ? quoteToEdit.status : QuoteStatus.Draft,
@@ -445,6 +456,32 @@ const CreateQuoteModal: React.FC<CreateQuoteModalProps> = ({ isOpen, onClose, on
                                     className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
                                 >
                                     <Plus size={14} /> {t('addPurchaseOrderNumber')}
+                                </button>
+                            </div>
+                        )}
+
+                        {showReferenceField ? (
+                            <div className="space-y-1">
+                                <label className="block text-sm font-bold text-slate-700 ml-1">{t('reference')}</label>
+                                <div className="relative">
+                                    <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder={t('reference')} className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12 pr-10"/>
+                                    <button 
+                                        type="button"
+                                        onClick={() => { setReference(''); setShowReferenceField(false); }}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-end pb-2">
+                                <button 
+                                    type="button"
+                                    onClick={() => setShowReferenceField(true)}
+                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                >
+                                    <Plus size={14} /> {t('addReference')}
                                 </button>
                             </div>
                         )}
