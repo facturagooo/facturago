@@ -42,6 +42,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ settings, document, c
         isDeliveryNote = true;
     }
 
+    const docReference = document.reference || document.lineItems[0]?.reference || "";
     const docSubject = document.subject || document.lineItems[0]?.subject || "";
     const docPaymentMethod = document.paymentMethod || document.lineItems[0]?.paymentMethod || "";
     const docCheckNumber = document.checkNumber || document.lineItems[0]?.checkNumber || "";
@@ -170,10 +171,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ settings, document, c
                                     <p>{t('expectedDelivery')} : <span className="font-medium text-neutral-900">{new Date(docExpectedDate).toLocaleDateString(language === 'ar' ? 'ar-MA' : 'fr-FR')}</span></p>
                                 )}
                                 {('purchaseOrderNumber' in document && document.purchaseOrderNumber) && (
-                                <p>{t('purchaseOrderNumber')} : <span className="font-medium text-neutral-900">{document.purchaseOrderNumber}</span></p>
-                            )}
-                            {document.reference && <p>{t('reference')} : <span className="font-medium text-neutral-900">{document.reference}</span></p>}
-                        </div>
+                                    <p>{t('purchaseOrderNumber')} : <span className="font-medium text-neutral-900">{document.purchaseOrderNumber}</span></p>
+                                )}
+                            </div>
                     </div>
                 </header>
 
@@ -194,8 +194,9 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ settings, document, c
                     </div>
                 </section>
 
-                 {(docSubject || docPaymentMethod) && (
-                     <section className="mt-6 mb-4 flex gap-10 flex-wrap">
+                {(docReference || docSubject || docPaymentMethod) && (
+                    <section className="mt-6 mb-4 flex flex-col gap-2">
+                        {docReference && <p className="text-sm"><span className="font-bold text-neutral-700">{t('reference')} :</span> <span className="text-neutral-900 font-medium">{docReference}</span></p>}
                         {docSubject && <p className="text-sm"><span className="font-bold text-neutral-700">{t('subject')} :</span> {docSubject}</p>}
                         {docPaymentMethod && <p className="text-sm"><span className="font-bold text-neutral-700">{t('paymentMethod') || 'Mode de paiement'} :</span> {docPaymentMethod} {docPaymentMethod === 'Chèque' && docCheckNumber ? `(N° ${docCheckNumber}${docBankName ? ` - ${docBankName}` : ''})` : ''}</p>}
                     </section>

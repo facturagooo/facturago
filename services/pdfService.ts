@@ -906,7 +906,6 @@ export const generateDocumentHTML = (
             ${extraDateLabel ? `<div>${extraDateLabel} : <b>${extraDateValue}</b></div>` : ""}
             ${secondDateLabel ? `<div>${secondDateLabel} : <b>${secondDateValue}</b></div>` : ""}
             ${doc.purchaseOrderNumber ? `<div>${dict.purchaseOrderNumber || "N° BC"} : <b>${doc.purchaseOrderNumber}</b></div>` : ""}
-            ${doc.reference ? `<div>${dict.reference || "Réf"} : <b>${doc.reference}</b></div>` : ""}
             ${doc.invoiceId ? `<div>${lang === "es" ? "Ref. Factura" : lang === "en" ? "Invoice Ref" : "Réf. Facture"} : <b>${doc.invoiceId}</b></div>` : ""}
         </div>
     `;
@@ -1248,9 +1247,10 @@ export const generateDocumentHTML = (
             <div id="measure-header" style="position: relative; z-index: 2;">
                 ${topHeaderHtml}
                 ${clientInfoHtml}
-                <div style="display: flex; gap: 40px; margin-bottom: 15px; flex-wrap: wrap;">
-                    ${docSubject ? `<div style="font-weight: 600;">Objet : <span style="font-weight: normal;">${docSubject}</span></div>` : ""}
-                    ${docPaymentMethod ? `<div style="font-weight: 600;">Mode de paiement : <span style="font-weight: normal;">${docPaymentMethod} ${docPaymentMethod === 'Chèque' && docCheckNumber ? `(N° ${docCheckNumber}${docBankName ? ` - ${docBankName}` : ''})` : ''}</span></div>` : ""}
+                <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 15px;">
+                    ${doc.reference ? `<div style="font-size: 13px;"><span style="font-weight: 600;">${dict.reference || "Référence"} :</span> <span style="font-weight: 500;">${doc.reference}</span></div>` : ""}
+                    ${docSubject ? `<div style="font-size: 13px;"><span style="font-weight: 600;">Objet :</span> <span style="font-weight: normal;">${docSubject}</span></div>` : ""}
+                    ${docPaymentMethod ? `<div style="font-size: 13px;"><span style="font-weight: 600;">Mode de paiement :</span> <span style="font-weight: normal;">${docPaymentMethod} ${docPaymentMethod === 'Chèque' && docCheckNumber ? `(N° ${docCheckNumber}${docBankName ? ` - ${docBankName}` : ''})` : ''}</span></div>` : ""}
                 </div>
             </div>
             <table style="width: 100%; border-collapse: separate; border-spacing: 0; margin-bottom: 20px;">
@@ -1389,9 +1389,10 @@ export const generateDocumentHTML = (
                 <div style="position: relative; z-index: 2;">
                     ${topHeaderHtml}
                     ${clientInfoHtml}
-                    <div style="display: flex; gap: 40px; margin-bottom: 15px; flex-wrap: wrap;">
-                        ${docSubject ? `<div style="font-weight: 600;">${dict.pdfSubject || "Objet"} : <span style="font-weight: normal;">${docSubject}</span></div>` : ""}
-                        ${docPaymentMethod ? `<div style="font-weight: 600;">${dict.paymentMethod || "Mode de paiement"} : <span style="font-weight: normal;">${docPaymentMethod} ${docPaymentMethod === 'Chèque' && docCheckNumber ? `(N° ${docCheckNumber}${docBankName ? ` - ${docBankName}` : ''})` : ''}</span></div>` : ""}
+                    <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 15px;">
+                        ${doc.reference ? `<div style="font-size: 13px;"><span style="font-weight: 600;">${dict.reference || "Référence"} :</span> <span style="font-weight: 500;">${doc.reference}</span></div>` : ""}
+                        ${docSubject ? `<div style="font-size: 13px;"><span style="font-weight: 600;">${dict.pdfSubject || "Objet"} :</span> <span style="font-weight: normal;">${docSubject}</span></div>` : ""}
+                        ${docPaymentMethod ? `<div style="font-size: 13px;"><span style="font-weight: 600;">${dict.paymentMethod || "Mode de paiement"} :</span> <span style="font-weight: normal;">${docPaymentMethod} ${docPaymentMethod === 'Chèque' && docCheckNumber ? `(N° ${docCheckNumber}${docBankName ? ` - ${docBankName}` : ''})` : ''}</span></div>` : ""}
                     </div>
                 </div>
 

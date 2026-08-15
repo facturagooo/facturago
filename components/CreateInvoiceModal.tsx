@@ -525,7 +525,8 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                             <label className="block text-sm font-bold text-slate-700 ml-1">{t('date')} *</label>
                             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12"/>
                         </div>
-                        {showDueDateField ? (
+
+                        {showDueDateField && (
                             <div className="space-y-1">
                                 <label className="block text-sm font-bold text-slate-700 ml-1">{t('dueDate')}</label>
                                 <div className="relative">
@@ -539,48 +540,31 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                                     </button>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="flex items-end pb-2">
-                                <button 
-                                    type="button"
-                                    onClick={() => {
-                                        if (!dueDate) {
-                                            setDueDate(new Date(new Date(date).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-                                        }
-                                        setShowDueDateField(true);
-                                    }}
-                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                                >
-                                    <Plus size={14} /> {t('addDueDate')}
-                                </button>
-                            </div>
                         )}
-                        {showSubjectField ? (
-                            <div className="space-y-1">
-                                <label className="block text-sm font-bold text-slate-700 ml-1">{t('subject')}</label>
+
+                        {showReferenceField && (
+                            <div className="space-y-1 md:col-span-2">
+                                <label className="block text-sm font-bold text-slate-700 ml-1">{t('reference')}</label>
                                 <div className="relative">
-                                    <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t('subject')} className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12 pr-10"/>
+                                    <input 
+                                        type="text" 
+                                        value={reference} 
+                                        onChange={(e) => setReference(e.target.value)} 
+                                        placeholder={t('reference')} 
+                                        className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12 pr-10"
+                                    />
                                     <button 
-                                        type="button"
-                                        onClick={() => { setSubject(''); setShowSubjectField(false); }}
+                                        type="button" 
+                                        onClick={() => { setReference(''); setShowReferenceField(false); }}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
                                     >
                                         <X size={16} />
                                     </button>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="flex items-end pb-2">
-                                <button 
-                                    type="button"
-                                    onClick={() => setShowSubjectField(true)}
-                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                                >
-                                    <Plus size={14} /> {t('addSubject')}
-                                </button>
-                            </div>
                         )}
-                        {showPOField ? (
+
+                        {showPOField && (
                             <div className="space-y-1">
                                 <label className="block text-sm font-bold text-slate-700 ml-1">{t('purchaseOrderNumber')}</label>
                                 <div className="relative">
@@ -600,50 +584,26 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                                     </button>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="flex items-end pb-2">
-                                <button 
-                                    type="button"
-                                    onClick={() => setShowPOField(true)}
-                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                                >
-                                    <Plus size={14} /> {t('addPurchaseOrderNumber')}
-                                </button>
-                            </div>
                         )}
-                        {showReferenceField ? (
-                            <div className="space-y-1">
-                                <label className="block text-sm font-bold text-slate-700 ml-1">{t('reference')}</label>
+
+                        {showSubjectField && (
+                            <div className="space-y-1 md:col-span-2">
+                                <label className="block text-sm font-bold text-slate-700 ml-1">{t('subject')}</label>
                                 <div className="relative">
-                                    <input 
-                                        type="text" 
-                                        value={reference} 
-                                        onChange={(e) => setReference(e.target.value)} 
-                                        placeholder={t('reference')} 
-                                        className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12 pr-10"
-                                    />
+                                    <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t('subject')} className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12 pr-10"/>
                                     <button 
-                                        type="button" 
-                                        onClick={() => { setReference(''); setShowReferenceField(false); }}
+                                        type="button"
+                                        onClick={() => { setSubject(''); setShowSubjectField(false); }}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
                                     >
                                         <X size={16} />
                                     </button>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="flex items-end pb-2">
-                                <button 
-                                    type="button"
-                                    onClick={() => setShowReferenceField(true)}
-                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                                >
-                                    <Plus size={14} /> {t('addReference')}
-                                </button>
-                            </div>
                         )}
-                        {showPaymentMethodField ? (
-                            <div className="space-y-1">
+
+                        {showPaymentMethodField && (
+                            <div className="space-y-1 md:col-span-2">
                                 <label className="block text-sm font-bold text-slate-700 ml-1">{t('paymentMethod')}</label>
                                 <div className="relative">
                                     <select value={invoicePaymentMethod} onChange={(e) => setInvoicePaymentMethod(e.target.value)} className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-12 pr-10">
@@ -662,15 +622,61 @@ const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({ isOpen, onClose
                                     </button>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="flex items-end pb-2">
-                                <button 
-                                    type="button"
-                                    onClick={() => setShowPaymentMethodField(true)}
-                                    className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                                >
-                                    <Plus size={14} /> {t('addPaymentMethod')}
-                                </button>
+                        )}
+
+                        {/* Optional action buttons toolbar */}
+                        {(!showReferenceField || !showPOField || !showDueDateField || !showSubjectField || !showPaymentMethodField) && (
+                            <div className="flex flex-wrap items-center gap-2 pt-1 pb-1 md:col-span-2">
+                                {!showReferenceField && (
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowReferenceField(true)}
+                                        className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100/80 px-3.5 py-2.5 rounded-xl border border-emerald-200/80 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xs"
+                                    >
+                                        <Plus size={14} className="stroke-[2.5]" /> {t('addReference')}
+                                    </button>
+                                )}
+                                {!showPOField && (
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowPOField(true)}
+                                        className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100/80 px-3.5 py-2.5 rounded-xl border border-emerald-200/80 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xs"
+                                    >
+                                        <Plus size={14} className="stroke-[2.5]" /> {t('addPurchaseOrderNumber')}
+                                    </button>
+                                )}
+                                {!showDueDateField && (
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            if (!dueDate) {
+                                                setDueDate(new Date(new Date(date).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+                                            }
+                                            setShowDueDateField(true);
+                                        }}
+                                        className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100/80 px-3.5 py-2.5 rounded-xl border border-emerald-200/80 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xs"
+                                    >
+                                        <Plus size={14} className="stroke-[2.5]" /> {t('addDueDate')}
+                                    </button>
+                                )}
+                                {!showSubjectField && (
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowSubjectField(true)}
+                                        className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100/80 px-3.5 py-2.5 rounded-xl border border-emerald-200/80 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xs"
+                                    >
+                                        <Plus size={14} className="stroke-[2.5]" /> {t('addSubject')}
+                                    </button>
+                                )}
+                                {!showPaymentMethodField && (
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowPaymentMethodField(true)}
+                                        className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100/80 px-3.5 py-2.5 rounded-xl border border-emerald-200/80 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xs"
+                                    >
+                                        <Plus size={14} className="stroke-[2.5]" /> {t('addPaymentMethod')}
+                                    </button>
+                                )}
                             </div>
                         )}
 
