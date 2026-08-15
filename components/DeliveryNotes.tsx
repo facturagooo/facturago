@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import Header from './Header';
 import { Truck, FileText, Plus, Pencil, Download, Trash2, CheckCircle, AlertCircle, Clock, Loader2, FileCheck, MoreVertical, Printer, ChevronLeft, ChevronRight, Search, MessageSquare } from 'lucide-react';
-import { DeliveryNote, Invoice, Client, Product, CompanySettings } from '../types';
+import { DeliveryNote, Invoice, Client, Product, CompanySettings, Payment } from '../types';
 import CreateDeliveryNoteModal from './CreateDeliveryNoteModal';
 import ConfirmationModal from './ConfirmationModal';
 import DeliveryNoteOptionModal from './DeliveryNoteOptionModal';
@@ -16,6 +16,7 @@ import DocumentPreviewModal from './DocumentPreviewModal';
 interface DeliveryNotesProps {
     deliveryNotes: DeliveryNote[];
     invoices: Invoice[];
+    onAddPayment?: (payment: Omit<Payment, 'id'>) => void;
     onCreateDeliveryNote: (note: Omit<DeliveryNote, 'id'>) => void;
     onUpdateDeliveryNote: (note: DeliveryNote) => void;
     onDeleteDeliveryNote: (id: string) => void;
@@ -29,6 +30,7 @@ interface DeliveryNotesProps {
 const DeliveryNotes: React.FC<DeliveryNotesProps> = ({ 
     deliveryNotes, 
     invoices, 
+    onAddPayment,
     onCreateDeliveryNote, 
     onUpdateDeliveryNote, 
     onDeleteDeliveryNote, 

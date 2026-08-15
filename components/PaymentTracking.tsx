@@ -2,24 +2,41 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Header from './Header';
-import { Invoice, Payment, InvoiceStatus, Client, CompanySettings } from '../types';
-import { Search, CreditCard, AlertCircle, CheckCircle, PieChart, DollarSign, Users, X, MoreVertical, ChevronDown } from 'lucide-react';
+import { Invoice, Payment, InvoiceStatus, Client, CompanySettings, DeliveryNote } from '../types';
+import { Search, CreditCard, AlertCircle, CheckCircle, PieChart, DollarSign, Users, X, MoreVertical, ChevronDown, FileText, Truck } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface PaymentTrackingProps {
     companySettings?: CompanySettings | null;
     invoices: Invoice[];
+    deliveryNotes?: DeliveryNote[];
     payments: Payment[];
     onAddPayment: (payment: Omit<Payment, 'id'>) => void;
     clients: Client[];
 }
 
-const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, onAddPayment, clients, companySettings }) => {
+interface PaymentDocumentItem {
+    id: string;
+    type: 'invoice' | 'deliveryNote';
+    documentId: string;
+    clientId: string;
+    clientName: string;
+    amount: number;
+    amountPaid: number;
+    remaining: number;
+    status: InvoiceStatus | string;
+    isPaid: boolean;
+    isPartial: boolean;
+    isOutstanding: boolean;
+}
+
+const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, deliveryNotes = [], payments, onAddPayment, clients, companySettings }) => {
     const { t, isRTL, language } = useLanguage();
     const [activeTab, setActiveTab] = useState<'outstanding' | 'partial' | 'paid'>('outstanding');
+    const [docTypeFilter, setDocTypeFilter] = useState<'all' | 'invoice' | 'deliveryNote'>('all');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedClientId, setSelectedClientId] = useState<string>('');
-    const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+    const [selectedItem, setSelectedItem] = useState<PaymentDocumentItem | null>(null);
     
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -28,7 +45,7 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
     // Reset page when tab, search or client filter changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [activeTab, searchTerm, selectedClientId]);
+    }, [activeTab, docTypeFilter, searchTerm, selectedClientId]);
 
     // Payment Modal State
     const [paymentAmount, setPaymentAmount] = useState<number>(0);
@@ -52,100 +69,120 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
         };
     }, [activeMenuId]);
 
-    const toggleMenu = (e: React.MouseEvent, invoice: Invoice) => {
-        e.stopPropagation();
-        if (activeMenuId === invoice.id) {
-            setActiveMenuId(null);
-            setMenuPosition(null);
-        } else {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const viewportHeight = window.innerHeight;
-            const menuHeight = 160; 
-            const menuWidth = 192; 
-            
-            let top: number;
-            let transformOrigin: string;
-            
-            if (rect.bottom + menuHeight > viewportHeight) {
-                top = rect.top + window.scrollY - menuHeight - 5;
-                transformOrigin = isRTL ? 'bottom left' : 'bottom right';
-            } else {
-                top = rect.bottom + window.scrollY + 5;
-                transformOrigin = isRTL ? 'top left' : 'top right';
-            }
+    const allDocuments = useMemo<PaymentDocumentItem[]>(() => {
+        const items: PaymentDocumentItem[] = [];
 
-            let left: number;
-            if (isRTL) {
-                left = rect.left + window.scrollX;
-            } else {
-                left = rect.right + window.scrollX - menuWidth;
-            }
+        // 1. Invoices (exclude drafts)
+        invoices.filter(inv => inv.status !== InvoiceStatus.Draft).forEach(inv => {
+            const amount = inv.amount || 0;
+            const amountPaid = inv.amountPaid || 0;
+            const remaining = Math.max(0, amount - amountPaid);
+            const isPaid = inv.status === InvoiceStatus.Paid || (amountPaid >= amount - 0.1 && amount > 0);
+            const isPartial = inv.status === InvoiceStatus.Partial || (amountPaid > 0 && remaining > 0.01);
+            const isOutstanding = remaining > 0.01;
 
-            setActiveMenuId(invoice.id);
-            setMenuPosition({ top, left: Math.max(10, left), transformOrigin });
-        }
-    };
+            items.push({
+                id: inv.id,
+                type: 'invoice',
+                documentId: inv.documentId || inv.id,
+                clientId: inv.clientId,
+                clientName: inv.clientName,
+                amount,
+                amountPaid,
+                remaining,
+                status: inv.status,
+                isPaid,
+                isPartial,
+                isOutstanding
+            });
+        });
+
+        // 2. Standalone Delivery Notes (exclude drafts and already converted BLs)
+        deliveryNotes.filter(dn => !dn.invoiceId && dn.status !== 'Brouillon' && (dn.totalAmount || 0) > 0).forEach(dn => {
+            const amount = dn.totalAmount || 0;
+            const amountPaid = dn.paymentAmount || 0;
+            const remaining = Math.max(0, amount - amountPaid);
+            const isPaid = dn.status === 'Payé' || (amountPaid >= amount - 0.1 && amount > 0);
+            const isPartial = dn.status === 'Partiellement payé' || (amountPaid > 0 && remaining > 0.01);
+            const isOutstanding = remaining > 0.01;
+
+            items.push({
+                id: dn.id,
+                type: 'deliveryNote',
+                documentId: dn.documentId || dn.id,
+                clientId: dn.clientId,
+                clientName: dn.clientName,
+                amount,
+                amountPaid,
+                remaining,
+                status: dn.status || 'Non payé',
+                isPaid,
+                isPartial,
+                isOutstanding
+            });
+        });
+
+        return items;
+    }, [invoices, deliveryNotes]);
 
     const stats = useMemo(() => {
         let totalPaid = 0;
         let totalRemaining = 0;
         let partialRemaining = 0;
 
-        const targetInvoices = selectedClientId 
-            ? invoices.filter(inv => inv.clientId === selectedClientId && inv.status !== InvoiceStatus.Draft)
-            : invoices.filter(inv => inv.status !== InvoiceStatus.Draft);
+        const targetDocs = selectedClientId 
+            ? allDocuments.filter(d => d.clientId === selectedClientId)
+            : allDocuments;
 
-        targetInvoices.forEach(inv => {
-            const paid = inv.amountPaid || 0;
-            const remaining = Math.max(0, inv.amount - paid);
+        targetDocs.forEach(doc => {
+            totalPaid += doc.amountPaid;
+            totalRemaining += doc.remaining;
 
-            totalPaid += paid;
-            totalRemaining += remaining;
-
-            if (inv.status === InvoiceStatus.Partial) {
-                partialRemaining += remaining;
+            if (doc.isPartial) {
+                partialRemaining += doc.remaining;
             }
         });
 
         return { totalPaid, totalRemaining, partialRemaining };
-    }, [invoices, selectedClientId]);
+    }, [allDocuments, selectedClientId]);
 
-    const filteredInvoices = useMemo(() => {
-        let filtered = invoices.filter(inv => inv.status !== InvoiceStatus.Draft);
+    const filteredDocuments = useMemo(() => {
+        let filtered = allDocuments;
+
+        // Filter by Doc Type
+        if (docTypeFilter !== 'all') {
+            filtered = filtered.filter(d => d.type === docTypeFilter);
+        }
 
         // Filter by Client
         if (selectedClientId) {
-            filtered = filtered.filter(inv => inv.clientId === selectedClientId);
+            filtered = filtered.filter(d => d.clientId === selectedClientId);
         }
 
         // Filter by Tab
         if (activeTab === 'outstanding') {
-            filtered = filtered.filter(inv => 
-                inv.status === InvoiceStatus.Pending || 
-                inv.status === InvoiceStatus.Overdue || 
-                inv.status === InvoiceStatus.Partial
-            );
+            filtered = filtered.filter(d => d.isOutstanding);
         } else if (activeTab === 'partial') {
-            filtered = filtered.filter(inv => inv.status === InvoiceStatus.Partial);
+            filtered = filtered.filter(d => d.isPartial);
         } else if (activeTab === 'paid') {
-            filtered = filtered.filter(inv => inv.status === InvoiceStatus.Paid);
+            filtered = filtered.filter(d => d.isPaid);
         }
 
         // Filter by Search
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
-            filtered = filtered.filter(inv => 
-                (inv.clientName || '').toLowerCase().includes(term) ||
-                (inv.documentId || inv.id).toLowerCase().includes(term)
+            filtered = filtered.filter(d => 
+                (d.clientName || '').toLowerCase().includes(term) ||
+                (d.documentId || d.id).toLowerCase().includes(term)
             );
         }
 
         return filtered;
-    }, [invoices, activeTab, searchTerm, selectedClientId]);
+    }, [allDocuments, activeTab, docTypeFilter, searchTerm, selectedClientId]);
 
-    const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
+    const totalPages = Math.ceil(filteredDocuments.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
-    const paginatedInvoices = filteredInvoices.slice(startIndex, startIndex + itemsPerPage);
+    const paginatedDocuments = filteredDocuments.slice(startIndex, startIndex + itemsPerPage);
 
     const getPageNumbers = () => {
         const pages = [];
@@ -176,22 +213,55 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
         return pages;
     };
 
-    const handleOpenPayment = (invoice: Invoice) => {
-        setSelectedInvoice(invoice);
-        const remaining = invoice.amount - (invoice.amountPaid || 0);
-        setPaymentAmount(remaining);
+    const toggleMenu = (e: React.MouseEvent, docItem: PaymentDocumentItem) => {
+        e.stopPropagation();
+        if (activeMenuId === docItem.id) {
+            setActiveMenuId(null);
+            setMenuPosition(null);
+        } else {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+            const menuHeight = 160; 
+            const menuWidth = 192; 
+            
+            let top: number;
+            let transformOrigin: string;
+            
+            if (rect.bottom + menuHeight > viewportHeight) {
+                top = rect.top + window.scrollY - menuHeight - 5;
+                transformOrigin = isRTL ? 'bottom left' : 'bottom right';
+            } else {
+                top = rect.bottom + window.scrollY + 5;
+                transformOrigin = isRTL ? 'top left' : 'top right';
+            }
+
+            let left: number;
+            if (isRTL) {
+                left = rect.left + window.scrollX;
+            } else {
+                left = rect.right + window.scrollX - menuWidth;
+            }
+
+            setActiveMenuId(docItem.id);
+            setMenuPosition({ top, left: Math.max(10, left), transformOrigin });
+        }
+    };
+
+    const handleOpenPayment = (item: PaymentDocumentItem) => {
+        setSelectedItem(item);
+        setPaymentAmount(item.remaining);
         setActiveMenuId(null);
     };
 
     const handlePaymentSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedInvoice) return;
+        if (!selectedItem) return;
 
         onAddPayment({
-            invoiceId: selectedInvoice.id,
-            invoiceNumber: selectedInvoice.documentId || selectedInvoice.id,
-            clientId: selectedInvoice.clientId,
-            clientName: selectedInvoice.clientName,
+            invoiceId: selectedItem.id,
+            invoiceNumber: selectedItem.documentId || selectedItem.id,
+            clientId: selectedItem.clientId,
+            clientName: selectedItem.clientName,
             date: new Date().toISOString().split('T')[0],
             amount: paymentAmount,
             method: paymentMethod,
@@ -199,7 +269,7 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
             bankName: paymentMethod === 'Chèque' ? bankName : undefined
         });
 
-        setSelectedInvoice(null);
+        setSelectedItem(null);
         setCheckNumber('');
         setBankName('');
     };
@@ -211,9 +281,9 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
         <div dir={isRTL ? 'rtl' : 'ltr'} className="pb-20">
             <Header title={t('paymentTracking')} />
 
-            {/* Selection Client et Barre de recherche */}
+            {/* Selection Client, Type Document et Barre de recherche */}
             <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100 mb-6 flex flex-col md:flex-row gap-4 sm:gap-6 items-end">
-                <div className="w-full md:w-1/3 space-y-1.5">
+                <div className="w-full md:w-1/4 space-y-1.5">
                     <label className="block text-[10px] sm:text-xs font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5">
                         <Users size={12} className="text-emerald-600 sm:w-[14px] sm:h-[14px]"/> {t('client')}
                     </label>
@@ -234,7 +304,27 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
                     </div>
                 </div>
 
-                <div className="w-full md:w-2/3 space-y-1.5">
+                <div className="w-full md:w-1/4 space-y-1.5">
+                    <label className="block text-[10px] sm:text-xs font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5">
+                        <FileText size={12} className="text-emerald-600 sm:w-[14px] sm:h-[14px]"/> {language === 'ar' ? 'نوع الوثيقة' : 'Type de document'}
+                    </label>
+                    <div className="relative">
+                        <select 
+                            value={docTypeFilter} 
+                            onChange={(e) => setDocTypeFilter(e.target.value as any)}
+                            className="block w-full rounded-xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm h-10 sm:h-12 transition-all appearance-none pr-10 rtl:pl-10 rtl:pr-3"
+                        >
+                            <option value="all">{language === 'ar' ? 'الكل (فواتير وبونات التسليم)' : 'Tous (Factures & BL)'}</option>
+                            <option value="invoice">{language === 'ar' ? 'فواتير فقط' : 'Factures uniquement'}</option>
+                            <option value="deliveryNote">{language === 'ar' ? 'بونات التسليم فقط' : 'Bons de livraison (BL)'}</option>
+                        </select>
+                        <div className={`pointer-events-none absolute inset-y-0 flex items-center px-3 ${isRTL ? 'left-0' : 'right-0'}`}>
+                            <ChevronDown size={14} className="text-slate-400 sm:w-4 sm:h-4" />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="w-full md:w-2/4 space-y-1.5">
                     <label className="block text-[10px] sm:text-xs font-black text-slate-400 uppercase ml-1 flex items-center gap-1.5">
                         <Search size={12} className="text-emerald-600 sm:w-[14px] sm:h-[14px]"/> {t('search')}
                     </label>
@@ -327,14 +417,14 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
                 </div>
             </div>
 
-            {/* Tableau des factures filtrées */}
+            {/* Tableau des factures & BL filtrés */}
             <div className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
                 {/* Desktop Table View */}
                 <div className="hidden md:block overflow-x-auto">
                     <table className="min-w-full divide-y divide-slate-100">
                         <thead className="bg-slate-50/80">
                             <tr>
-                                <th scope="col" className={`px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400 ${isRTL ? 'text-right' : 'text-left'}`}>{t('invoices')}</th>
+                                <th scope="col" className={`px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400 ${isRTL ? 'text-right' : 'text-left'}`}>Document</th>
                                 <th scope="col" className={`px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400 ${isRTL ? 'text-right' : 'text-left'}`}>{t('client')}</th>
                                 <th scope="col" className={`px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400 ${isRTL ? 'text-left' : 'text-right'}`}>{t('total')}</th>
                                 <th scope="col" className={`px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400 ${isRTL ? 'text-left' : 'text-right'}`}>{t('alreadyPaid')}</th>
@@ -344,44 +434,49 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-50">
-                            {paginatedInvoices.length > 0 ? (
-                                paginatedInvoices.map(invoice => {
-                                    const paid = invoice.amountPaid || 0;
-                                    const remaining = invoice.amount - paid;
-                                    
+                            {paginatedDocuments.length > 0 ? (
+                                paginatedDocuments.map(item => {
                                     return (
-                                        <tr key={invoice.id} className="hover:bg-emerald-50/30 transition-colors group">
+                                        <tr key={`${item.type}-${item.id}`} className="hover:bg-emerald-50/30 transition-colors group">
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold text-emerald-600 ${isRTL ? 'text-right' : 'text-left'}`}>
-                                                {invoice.documentId || invoice.id}
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                                                        item.type === 'deliveryNote' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                                                    }`}>
+                                                        {item.type === 'deliveryNote' ? <Truck size={10} /> : <FileText size={10} />}
+                                                        {item.type === 'deliveryNote' ? 'BL' : 'FACT'}
+                                                    </span>
+                                                    <span>{item.documentId || item.id}</span>
+                                                </div>
                                             </td>
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm text-slate-900 font-semibold ${isRTL ? 'text-right' : 'text-left'}`}>
-                                                {invoice.clientName}
+                                                {item.clientName}
                                             </td>
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm text-slate-600 ${isRTL ? 'text-left' : 'text-right'}`}>
-                                                {invoice.amount.toLocaleString(locale, { style: 'currency', currency: currencyCode })}
+                                                {item.amount.toLocaleString(locale, { style: 'currency', currency: currencyCode })}
                                             </td>
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm text-emerald-600 font-bold ${isRTL ? 'text-left' : 'text-right'}`}>
-                                                {paid > 0 ? paid.toLocaleString(locale, { style: 'currency', currency: currencyCode }) : '-'}
+                                                {item.amountPaid > 0 ? item.amountPaid.toLocaleString(locale, { style: 'currency', currency: currencyCode }) : '-'}
                                             </td>
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm font-black ${isRTL ? 'text-left' : 'text-right'}`}>
-                                                <span className={remaining > 0.01 ? 'text-red-600 bg-red-50 px-2 py-1 rounded-lg' : 'text-slate-400'}>
-                                                    {remaining > 0.01 ? remaining.toLocaleString(locale, { style: 'currency', currency: currencyCode }) : '0.00'}
+                                                <span className={item.remaining > 0.01 ? 'text-red-600 bg-red-50 px-2 py-1 rounded-lg' : 'text-slate-400'}>
+                                                    {item.remaining > 0.01 ? item.remaining.toLocaleString(locale, { style: 'currency', currency: currencyCode }) : '0.00'}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-center">
                                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                                                    invoice.status === InvoiceStatus.Paid ? 'bg-green-100 text-green-700' :
-                                                    invoice.status === InvoiceStatus.Partial ? 'bg-blue-100 text-blue-700' :
-                                                    invoice.status === InvoiceStatus.Overdue ? 'bg-red-100 text-red-700' :
+                                                    item.isPaid ? 'bg-green-100 text-green-700' :
+                                                    item.isPartial ? 'bg-blue-100 text-blue-700' :
+                                                    item.status === InvoiceStatus.Overdue ? 'bg-red-100 text-red-700' :
                                                     'bg-amber-100 text-amber-700'
                                                 }`}>
-                                                    {invoice.status}
+                                                    {item.status}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
                                                 <button 
-                                                    onClick={(e) => toggleMenu(e, invoice)}
-                                                    className={`p-2 rounded-full transition-colors ${activeMenuId === invoice.id ? 'bg-slate-200 text-slate-900' : 'text-slate-300 hover:bg-slate-100 group-hover:text-slate-500'}`}
+                                                    onClick={(e) => toggleMenu(e, item)}
+                                                    className={`p-2 rounded-full transition-colors ${activeMenuId === item.id ? 'bg-slate-200 text-slate-900' : 'text-slate-300 hover:bg-slate-100 group-hover:text-slate-500'}`}
                                                 >
                                                     <MoreVertical size={18} />
                                                 </button>
@@ -406,31 +501,34 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
 
                 {/* Mobile Card View */}
                 <div className="md:hidden divide-y divide-slate-100 bg-slate-50/10 p-2">
-                    {paginatedInvoices.length > 0 ? (
-                        paginatedInvoices.map(invoice => {
-                            const paid = invoice.amountPaid || 0;
-                            const remaining = invoice.amount - paid;
-                            
+                    {paginatedDocuments.length > 0 ? (
+                        paginatedDocuments.map(item => {
                             return (
-                                <div key={invoice.id} className="p-4 bg-white mb-2 rounded-2xl shadow-sm border border-slate-100 transition-all active:scale-[0.99] group">
+                                <div key={`${item.type}-${item.id}`} className="p-4 bg-white mb-2 rounded-2xl shadow-sm border border-slate-100 transition-all active:scale-[0.99] group">
                                     <div className={`flex justify-between items-start mb-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
                                         <div className="min-w-0 flex-1">
                                             <div className={`flex items-center gap-2 mb-0.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                                                <p className="text-[10px] font-black text-emerald-600 tracking-tight">{invoice.documentId || invoice.id}</p>
+                                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                                    item.type === 'deliveryNote' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                                                }`}>
+                                                    {item.type === 'deliveryNote' ? <Truck size={10} /> : <FileText size={10} />}
+                                                    {item.type === 'deliveryNote' ? 'BL' : 'FACT'}
+                                                </span>
+                                                <p className="text-[10px] font-black text-emerald-600 tracking-tight">{item.documentId || item.id}</p>
                                                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${
-                                                    invoice.status === InvoiceStatus.Paid ? 'bg-green-100 text-green-700' :
-                                                    invoice.status === InvoiceStatus.Partial ? 'bg-blue-100 text-blue-700' :
-                                                    invoice.status === InvoiceStatus.Overdue ? 'bg-red-100 text-red-700' :
+                                                    item.isPaid ? 'bg-green-100 text-green-700' :
+                                                    item.isPartial ? 'bg-blue-100 text-blue-700' :
+                                                    item.status === InvoiceStatus.Overdue ? 'bg-red-100 text-red-700' :
                                                     'bg-amber-100 text-amber-700'
                                                 }`}>
-                                                    {invoice.status}
+                                                    {item.status}
                                                 </span>
                                             </div>
-                                            <p className={`text-sm font-bold text-slate-900 truncate pr-2 ${isRTL ? 'text-right' : 'text-left'}`}>{invoice.clientName}</p>
+                                            <p className={`text-sm font-bold text-slate-900 truncate pr-2 ${isRTL ? 'text-right' : 'text-left'}`}>{item.clientName}</p>
                                         </div>
                                         <button 
-                                            onClick={(e) => toggleMenu(e, invoice)}
-                                            className={`p-2 rounded-xl transition-all border border-slate-50 active:bg-slate-100 ${activeMenuId === invoice.id ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-300'}`}
+                                            onClick={(e) => toggleMenu(e, item)}
+                                            className={`p-2 rounded-xl transition-all border border-slate-50 active:bg-slate-100 ${activeMenuId === item.id ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-300'}`}
                                         >
                                             <MoreVertical size={18} />
                                         </button>
@@ -440,26 +538,26 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
                                         <div className={isRTL ? 'text-right' : 'text-left'}>
                                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('total')}</p>
                                             <p className="text-[13px] font-black text-slate-800">
-                                                {invoice.amount.toLocaleString(locale, { style: 'currency', currency: currencyCode, maximumFractionDigits: 0 })}
+                                                {item.amount.toLocaleString(locale, { style: 'currency', currency: currencyCode, maximumFractionDigits: 0 })}
                                             </p>
                                         </div>
                                         <div className={isRTL ? 'text-left' : 'text-right'}>
                                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('paid')}</p>
                                             <p className="text-[13px] font-black text-emerald-600">
-                                                {paid.toLocaleString(locale, { style: 'currency', currency: currencyCode, maximumFractionDigits: 0 })}
+                                                {item.amountPaid.toLocaleString(locale, { style: 'currency', currency: currencyCode, maximumFractionDigits: 0 })}
                                             </p>
                                         </div>
                                         <div className={`col-span-2 pt-2 mt-1 border-t border-slate-200/50 flex justify-between items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
                                             <p className="text-[9px] font-black text-red-500 uppercase tracking-widest leading-none">{t('remaining')}</p>
-                                            <p className={`text-sm font-black leading-none ${remaining > 0.01 ? 'text-red-600' : 'text-slate-300'}`}>
-                                                {remaining.toLocaleString(locale, { style: 'currency', currency: currencyCode, maximumFractionDigits: 0 })}
+                                            <p className={`text-sm font-black leading-none ${item.remaining > 0.01 ? 'text-red-600' : 'text-slate-300'}`}>
+                                                {item.remaining.toLocaleString(locale, { style: 'currency', currency: currencyCode, maximumFractionDigits: 0 })}
                                             </p>
                                         </div>
                                     </div>
 
-                                    {remaining > 0.01 && (
+                                    {item.remaining > 0.01 && (
                                         <button 
-                                            onClick={() => handleOpenPayment(invoice)}
+                                            onClick={() => handleOpenPayment(item)}
                                             className="w-full mt-3 flex items-center justify-center gap-2 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs shadow-lg shadow-emerald-100 active:scale-95 transition-all"
                                         >
                                             <CreditCard size={14} />
@@ -499,7 +597,7 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
                         <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                             <div>
                                 <p className="text-xs font-medium text-slate-500">
-                                    Affichage de <span className="font-bold text-emerald-600">{startIndex + 1}</span> à <span className="font-bold text-emerald-600">{Math.min(startIndex + itemsPerPage, filteredInvoices.length)}</span> sur <span className="font-bold text-emerald-600">{filteredInvoices.length}</span> documents
+                                    Affichage de <span className="font-bold text-emerald-600">{startIndex + 1}</span> à <span className="font-bold text-emerald-600">{Math.min(startIndex + itemsPerPage, filteredDocuments.length)}</span> sur <span className="font-bold text-emerald-600">{filteredDocuments.length}</span> documents
                                 </p>
                             </div>
                             <div>
@@ -546,7 +644,7 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
             </div>
 
             {/* Menu Dropdown via Portal avec positionnement intelligent */}
-            {activeMenuId && filteredInvoices.find(inv => inv.id === activeMenuId) && menuPosition && createPortal(
+            {activeMenuId && filteredDocuments.find(d => d.id === activeMenuId) && menuPosition && createPortal(
                 <div 
                     className="absolute z-[9999] w-48 origin-top-right rounded-xl bg-white shadow-2xl ring-1 ring-black ring-opacity-10 focus:outline-none animate-in fade-in zoom-in-95 duration-100"
                     style={{ 
@@ -558,14 +656,14 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
                 >
                     <div className="py-1.5">
                         {(() => {
-                            const inv = filteredInvoices.find(i => i.id === activeMenuId);
-                            const remaining = inv ? inv.amount - (inv.amountPaid || 0) : 0;
+                            const docItem = filteredDocuments.find(i => i.id === activeMenuId);
+                            const remaining = docItem ? docItem.remaining : 0;
                             
                             return (
                                 <>
-                                    {remaining > 0.1 ? (
+                                    {remaining > 0.01 ? (
                                         <button 
-                                            onClick={() => handleOpenPayment(inv!)}
+                                            onClick={() => handleOpenPayment(docItem!)}
                                             className="flex w-full items-center px-4 py-3 text-sm font-bold text-emerald-700 hover:bg-emerald-50 transition-colors"
                                         >
                                             <CreditCard size={16} className={`${isRTL ? 'ml-3' : 'mr-3'}`} /> {t('collectPayment')}
@@ -575,15 +673,6 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
                                             <CheckCircle size={16} className={`${isRTL ? 'ml-3' : 'mr-3'}`} /> {t('pdfSettled')}
                                         </div>
                                     )}
-                                    
-                                    <div className="border-t border-slate-100 my-1"></div>
-                                    
-                                    <button 
-                                        onClick={() => { setActiveMenuId(null); }}
-                                        className="flex w-full items-center px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-                                    >
-                                        <DollarSign size={16} className={`${isRTL ? 'ml-3' : 'mr-3'}`} /> {language === 'es' ? 'Ver detalles' : 'Détails financiers'}
-                                    </button>
                                 </>
                             );
                         })()}
@@ -593,29 +682,31 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
             )}
 
             {/* Modal de règlement */}
-            {selectedInvoice && (
+            {selectedItem && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 w-full max-w-md animate-in fade-in zoom-in duration-200">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
                                 <CreditCard className="text-emerald-600 sm:w-6 sm:h-6" size={20} /> {t('recordPayment')}
                             </h3>
-                            <button onClick={() => setSelectedInvoice(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-all"><X size={20} /></button>
+                            <button onClick={() => setSelectedItem(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-all"><X size={20} /></button>
                         </div>
 
                         <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl mb-6 sm:mb-8 text-xs sm:text-sm border border-slate-100 shadow-inner">
                             <div className="flex justify-between mb-2">
-                                <span className="text-slate-400 font-black uppercase text-[9px] sm:text-[10px] tracking-widest">{t('invoices')}</span>
-                                <span className="font-bold text-slate-900">#{selectedInvoice.documentId || selectedInvoice.id}</span>
+                                <span className="text-slate-400 font-black uppercase text-[9px] sm:text-[10px] tracking-widest">
+                                    {selectedItem.type === 'deliveryNote' ? 'Bon de Livraison' : t('invoices')}
+                                </span>
+                                <span className="font-bold text-slate-900">#{selectedItem.documentId || selectedItem.id}</span>
                             </div>
                             <div className="flex justify-between mb-2">
                                 <span className="text-slate-400 font-black uppercase text-[9px] sm:text-[10px] tracking-widest">{t('client')}</span>
-                                <span className="font-bold text-slate-900 truncate max-w-[150px] sm:max-w-[200px]">{selectedInvoice.clientName}</span>
+                                <span className="font-bold text-slate-900 truncate max-w-[150px] sm:max-w-[200px]">{selectedItem.clientName}</span>
                             </div>
                             <div className="h-px bg-slate-200/60 my-3 sm:my-4"></div>
                             <div className="flex justify-between items-center font-black">
                                 <span className="text-red-500 uppercase text-[9px] sm:text-[10px] tracking-widest">{t('remaining')}</span>
-                                <span className="text-lg sm:text-xl text-red-600">{(selectedInvoice.amount - (selectedInvoice.amountPaid || 0)).toLocaleString(locale, { style: 'currency', currency: currencyCode })}</span>
+                                <span className="text-lg sm:text-xl text-red-600">{selectedItem.remaining.toLocaleString(locale, { style: 'currency', currency: currencyCode })}</span>
                             </div>
                         </div>
 
@@ -626,7 +717,7 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
                                     <input 
                                         type="number" 
                                         step="0.01" 
-                                        max={selectedInvoice.amount - (selectedInvoice.amountPaid || 0)}
+                                        max={selectedItem.remaining}
                                         value={paymentAmount} 
                                         onChange={e => setPaymentAmount(parseFloat(e.target.value))}
                                         className={`block w-full rounded-2xl border-slate-200 bg-slate-50 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 font-black text-xl sm:text-2xl h-14 sm:h-16 ${isRTL ? 'pl-16 pr-4' : 'pl-4 pr-16'}`}
@@ -680,7 +771,7 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
                             )}
 
                             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-8 sm:mt-10">
-                                <button type="button" onClick={() => setSelectedInvoice(null)} className="flex-1 py-3 sm:py-4 text-xs sm:text-sm font-bold text-slate-500 bg-slate-50 border border-slate-200 rounded-2xl hover:bg-slate-100 transition-all uppercase tracking-widest order-2 sm:order-1">{t('cancel')}</button>
+                                <button type="button" onClick={() => setSelectedItem(null)} className="flex-1 py-3 sm:py-4 text-xs sm:text-sm font-bold text-slate-500 bg-slate-50 border border-slate-200 rounded-2xl hover:bg-slate-100 transition-all uppercase tracking-widest order-2 sm:order-1">{t('cancel')}</button>
                                 <button type="submit" className="flex-[2] py-3 sm:py-4 text-xs sm:text-sm font-black text-white bg-emerald-600 rounded-2xl hover:bg-emerald-700 shadow-xl shadow-emerald-500/30 transition-all transform active:scale-95 uppercase tracking-widest order-1 sm:order-2">{t('confirm')}</button>
                             </div>
                         </form>
@@ -692,3 +783,4 @@ const PaymentTracking: React.FC<PaymentTrackingProps> = ({ invoices, payments, o
 };
 
 export default PaymentTracking;
+

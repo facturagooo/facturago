@@ -9,11 +9,12 @@ import {
     CreditCard, ShoppingBag, ArrowUpRight, ArrowDownRight, Filter, PieChart as PieIcon, Activity,
     ArrowRightLeft, UserCheck, Truck, BarChart2, User, Target, Info, FileText, ChevronLeft, ChevronRight, Package
 } from 'lucide-react';
-import { Invoice, Payment, PurchaseOrder, Product, PurchaseOrderStatus, InvoiceStatus, CreditNote, CreditNoteStatus, Expense, SalaryPayment, StockMovement } from '../types';
+import { Invoice, Payment, PurchaseOrder, Product, PurchaseOrderStatus, InvoiceStatus, CreditNote, CreditNoteStatus, Expense, SalaryPayment, StockMovement, DeliveryNote } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface StatisticsProps {
     invoices: Invoice[];
+    deliveryNotes?: DeliveryNote[];
     payments: Payment[];
     purchaseOrders: PurchaseOrder[];
     products: Product[];
@@ -26,7 +27,7 @@ interface StatisticsProps {
 
 type DateRangeType = 'today' | 'week' | 'month' | 'year' | 'custom';
 
-const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrders, products, expenses = [], stockMovements = [], companySettings, creditNotes = [], salaryPayments = [] }) => {
+const Statistics: React.FC<StatisticsProps> = ({ invoices, deliveryNotes = [], payments, purchaseOrders, products, expenses = [], stockMovements = [], companySettings, creditNotes = [], salaryPayments = [] }) => {
     const { t, isRTL, language } = useLanguage();
     
     const [rangeType, setRangeType] = useState<DateRangeType>('month');
@@ -101,7 +102,8 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
         };
 
         const clientsMap = new Map<string, string>();
-        invoices.forEach(inv => clientsMap.set(inv.clientId, inv.clientName));
+        invoices.forEach(inv => { if (inv.clientId && inv.clientName) clientsMap.set(inv.clientId, inv.clientName); });
+        deliveryNotes.forEach(dn => { if (dn.clientId && dn.clientName) clientsMap.set(dn.clientId, dn.clientName); });
         const clientsList = Array.from(clientsMap.entries()).map(([id, name]) => ({ id, name }));
 
         const calculateFinancials = (s: Date, e: Date) => {
@@ -114,6 +116,15 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
                 inv.status !== InvoiceStatus.Draft && 
                 inv.status !== InvoiceStatus.Pending && 
                 isInRange(inv.date, s, e)
+            );
+
+            // Standalone Delivery Notes (ONLY include Paid or Partially Paid BLs)
+            const periodPaidOrPartialBLs = deliveryNotes.filter(dn => 
+                !dn.invoiceId && 
+                dn.status !== 'Brouillon' && 
+                (dn.status === 'Payé' || dn.status === 'Partiellement payé' || (dn.paymentAmount || 0) > 0) &&
+                (dn.totalAmount || 0) > 0 &&
+                isInRange(dn.date, s, e)
             );
             
             // Helper to get invoice amount (HT or TTC)
@@ -130,14 +141,27 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
                 return (inv.amount || 0) / 1.2;
             };
 
+            const getBLAmount = (dn: DeliveryNote) => {
+                if (useTTC) return dn.totalAmount || 0;
+                if (dn.subTotal !== undefined && dn.subTotal > 0) return dn.subTotal;
+                return (dn.totalAmount || 0) / 1.2;
+            };
+
+            const paidBLs = periodPaidOrPartialBLs.filter(dn => dn.status === 'Payé' || ((dn.paymentAmount || 0) >= (dn.totalAmount || 0) - 0.1 && (dn.totalAmount || 0) > 0));
+            const partialBLs = periodPaidOrPartialBLs.filter(dn => dn.status !== 'Payé' && (dn.paymentAmount || 0) > 0 && (dn.paymentAmount || 0) < (dn.totalAmount || 0) - 0.1);
+
+            const billedBLRevenue = paidBLs.reduce((sum, dn) => sum + getBLAmount(dn), 0) + 
+                partialBLs.reduce((sum, dn) => sum + (useTTC ? (dn.paymentAmount || 0) : ((dn.paymentAmount || 0) / 1.2)), 0);
+
             const billedRevenue = periodInvoices.reduce((sum, inv) => {
                 const invTotal = getInvAmount(inv);
                 return sum + invTotal;
-            }, 0);
+            }, 0) + billedBLRevenue;
             
-            // Only count Paid invoices for profit calculation as requested
+            // Only count Paid invoices & Paid/Partially paid BLs for revenue and profit calculation
             const paidInvoices = periodInvoices.filter(inv => inv.status === InvoiceStatus.Paid);
-            const paidRevenue = paidInvoices.reduce((sum, inv) => sum + getInvAmount(inv), 0);
+
+            const paidRevenue = paidInvoices.reduce((sum, inv) => sum + getInvAmount(inv), 0) + billedBLRevenue;
 
             // Calculate Total Purchase Orders Volume for the period
             const periodPOs = purchaseOrders.filter(po => 
@@ -146,7 +170,7 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
             );
             const totalPOs = periodPOs.reduce((sum, po) => sum + (useTTC ? (po.totalAmount || 0) : (po.subTotal || 0)), 0);
 
-            // Cost of goods sold (COGS): Theoretical purchase cost of items in PAID invoices only
+            // Cost of goods sold (COGS): Theoretical purchase cost of items in PAID invoices and PAID/PARTIALLY PAID BLs
             let totalCogs = 0;
             const paidInvoicesInPeriod = periodInvoices.filter(inv => inv.status === InvoiceStatus.Paid);
             
@@ -155,6 +179,24 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
                     const productDef = products.find(p => p.id === item.productId);
                     const purchasePrice = productDef?.purchasePrice || (item as any).purchasePrice || 0;
                     totalCogs += item.quantity * purchasePrice;
+                });
+            });
+
+            paidBLs.forEach(dn => {
+                dn.lineItems.forEach(item => {
+                    const productDef = products.find(p => p.id === item.productId);
+                    const purchasePrice = productDef?.purchasePrice || (item as any).purchasePrice || 0;
+                    totalCogs += item.quantity * purchasePrice;
+                });
+            });
+
+            partialBLs.forEach(dn => {
+                const total = dn.totalAmount || 0;
+                const ratio = total > 0 ? ((dn.paymentAmount || 0) / total) : 0;
+                dn.lineItems.forEach(item => {
+                    const productDef = products.find(p => p.id === item.productId);
+                    const purchasePrice = productDef?.purchasePrice || (item as any).purchasePrice || 0;
+                    totalCogs += item.quantity * purchasePrice * ratio;
                 });
             });
 
@@ -251,6 +293,36 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
             });
         });
 
+        // Include standalone Delivery Notes in product performance (ONLY Paid or Partially Paid)
+        deliveryNotes.filter(dn => 
+            !dn.invoiceId && 
+            dn.status !== 'Brouillon' && 
+            (dn.status === 'Payé' || dn.status === 'Partiellement payé' || (dn.paymentAmount || 0) > 0) &&
+            isInRange(dn.date, start, end)
+        ).forEach(dn => {
+            const total = dn.totalAmount || 0;
+            const paid = dn.paymentAmount || 0;
+            const ratio = dn.status === 'Payé' || paid >= total - 0.1 ? 1 : (total > 0 ? (paid / total) : 0);
+
+            dn.lineItems.forEach(item => {
+                if (item.productId) {
+                    const productDef = products.find(p => p.id === item.productId);
+                    const prodName = productDef ? productDef.name : item.name;
+
+                    if (!productStats.has(item.productId)) productStats.set(item.productId, { id: item.productId, name: prodName, qty: 0, revenue: 0, cost: 0 });
+                    const stat = productStats.get(item.productId)!;
+                    stat.qty += (item.quantity * ratio);
+                    
+                    const lineUnitPrice = useTTC ? (item.unitPrice * (1 + (item.vat || 0) / 100)) : item.unitPrice;
+                    const lineTotal = item.quantity * lineUnitPrice * ratio;
+                    stat.revenue += lineTotal;
+
+                    const purchasePrice = productDef?.purchasePrice || (item as any).purchasePrice || 0;
+                    stat.cost += (item.quantity * purchasePrice * ratio);
+                }
+            });
+        });
+
         // Subtract Credit Notes from performance
         creditNotes.filter(cn => 
             (cn.status === CreditNoteStatus.Validated || cn.status === CreditNoteStatus.Refunded) && 
@@ -280,7 +352,7 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
         const productPerformance = Array.from(productStats.values()).map(p => ({ ...p, profit: p.revenue - p.cost, margin: p.revenue > 0 ? ((p.revenue - p.cost) / p.revenue) * 100 : 0 })).sort((a, b) => b.revenue - a.revenue);
 
         return { currentMetrics: current, previousMetrics: previous, evolutionData: Array.from(chartDataMap.values()).sort((a, b) => a.date.localeCompare(b.date)), productPerformance, financeBreakdown, clientsList };
-    }, [invoices, payments, purchaseOrders, products, creditNotes, rangeType, startDate, endDate, useTTC]);
+    }, [invoices, deliveryNotes, payments, purchaseOrders, products, creditNotes, rangeType, startDate, endDate, useTTC]);
 
     // Client Profitability Calculation - Now fully Cash-Based
     const clientProfitability = useMemo(() => {
@@ -291,6 +363,14 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
             inv.status !== InvoiceStatus.Draft &&
             inv.status !== InvoiceStatus.Pending
         );
+
+        const clientBLs = deliveryNotes.filter(dn => 
+            dn.clientId === selectedClientId && 
+            !dn.invoiceId && 
+            dn.status !== 'Brouillon' &&
+            (dn.status === 'Payé' || dn.status === 'Partiellement payé' || (dn.paymentAmount || 0) > 0)
+        );
+
         const clientPayments = payments.filter(p => p.clientId === selectedClientId);
         
         // Total cash actually in hand
@@ -323,6 +403,34 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
             });
         });
 
+        clientBLs.forEach(dn => {
+            const total = dn.totalAmount || 0;
+            const paid = dn.paymentAmount || 0;
+            const ratio = dn.status === 'Payé' || paid >= total - 0.1 ? 1 : (total > 0 ? (paid / total) : 0);
+
+            dn.lineItems.forEach(item => {
+                if (item.productId) {
+                    const productDef = products.find(p => p.id === item.productId);
+                    const purchasePrice = productDef?.purchasePrice || (item as any).purchasePrice || 0;
+                    
+                    const lineUnitPrice = useTTC ? (item.unitPrice * (1 + (item.vat || 0) / 100)) : item.unitPrice;
+                    const lineCost = item.quantity * purchasePrice * ratio;
+                    const lineBilledRevenue = item.quantity * lineUnitPrice * ratio;
+                    
+                    totalCoutAchat += lineCost;
+
+                    if (!productsBought.has(item.productId)) {
+                        const prodName = productDef ? productDef.name : item.name;
+                        productsBought.set(item.productId, { name: prodName, qty: 0, cost: 0, revenue: 0 });
+                    }
+                    const pData = productsBought.get(item.productId)!;
+                    pData.qty += (item.quantity * ratio);
+                    pData.cost += lineCost;
+                    pData.revenue += lineBilledRevenue;
+                }
+            });
+        });
+
         const totalEncaisseReal = Array.from(productsBought.values()).reduce((sum, p) => sum + p.revenue, 0);
 
         return {
@@ -333,7 +441,7 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
             marginPercent: totalEncaisseReal > 0 ? ((totalEncaisseReal - totalCoutAchat) / totalEncaisseReal) * 100 : 0,
             products: Array.from(productsBought.values()).sort((a, b) => b.revenue - a.revenue)
         };
-    }, [selectedClientId, invoices, payments, products, clientsList, useTTC]);
+    }, [selectedClientId, invoices, deliveryNotes, payments, products, clientsList, useTTC]);
 
     const categoryProfitability = useMemo(() => {
         const { start, end } = getDatesFromRange(rangeType, startDate, endDate);
@@ -356,6 +464,13 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
             inv.status !== InvoiceStatus.Draft && 
             inv.status !== InvoiceStatus.Pending && 
             isInRange(inv.date, start, end)
+        );
+
+        const filteredBLs = deliveryNotes.filter(dn => 
+            !dn.invoiceId && 
+            dn.status !== 'Brouillon' && 
+            (dn.status === 'Payé' || dn.status === 'Partiellement payé' || (dn.paymentAmount || 0) > 0) &&
+            isInRange(dn.date, start, end)
         );
 
         filteredInvoices.forEach(inv => {
@@ -384,6 +499,34 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
             });
         });
 
+        filteredBLs.forEach(dn => {
+            const total = dn.totalAmount || 0;
+            const paid = dn.paymentAmount || 0;
+            const paymentRatio = dn.status === 'Payé' || paid >= total - 0.1 ? 1 : (total > 0 ? Math.min(1, paid / total) : 0);
+
+            dn.lineItems.forEach(item => {
+                const pid = item.productId;
+                if (pid) {
+                    const productDef = products.find(p => p.id === pid);
+                    let category = productDef?.category?.trim() || 'Non catégorisé';
+                    if (category === '') category = 'Non catégorisé';
+                    const purchasePrice = productDef?.purchasePrice || (item as any).purchasePrice || 0;
+                    
+                    const lineUnitPrice = useTTC ? (item.unitPrice * (1 + (item.vat || 0) / 100)) : item.unitPrice;
+                    const lineCost = item.quantity * purchasePrice * paymentRatio;
+                    const lineBilledRevenue = item.quantity * lineUnitPrice;
+                    
+                    if (!revenueByCategory.has(category)) {
+                        revenueByCategory.set(category, { category, qty: 0, cost: 0, revenue: 0 });
+                    }
+                    const cData = revenueByCategory.get(category)!;
+                    cData.qty += (item.quantity * paymentRatio);
+                    cData.cost += lineCost;
+                    cData.revenue += (lineBilledRevenue * paymentRatio);
+                }
+            });
+        });
+
         return Array.from(revenueByCategory.values())
             .map(c => ({
                 ...c,
@@ -392,7 +535,7 @@ const Statistics: React.FC<StatisticsProps> = ({ invoices, payments, purchaseOrd
             }))
             .filter(c => c.revenue > 0 || c.cost > 0)
             .sort((a, b) => b.profit - a.profit);
-    }, [invoices, products, rangeType, startDate, endDate, useTTC]);
+    }, [invoices, deliveryNotes, products, rangeType, startDate, endDate, useTTC]);
 
     const filteredCategoryProfitability = useMemo(() => {
         if (!selectedCategory) return [];

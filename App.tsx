@@ -775,7 +775,9 @@ const MainContent: React.FC = () => {
             const newPayment = { id: generateUUID(), ...paymentData };
             await dbService.payments.add(newPayment);
             setPayments(prev => [newPayment, ...prev]);
-            const invoice = invoices.find(inv => inv.id === paymentData.invoiceId);
+
+            // Check if payment is for an Invoice
+            const invoice = invoices.find(inv => inv.id === paymentData.invoiceId || inv.documentId === paymentData.invoiceId);
             if (invoice) {
                 const newAmountPaid = (invoice.amountPaid || 0) + paymentData.amount;
                 let newStatus = invoice.status;
@@ -784,9 +786,33 @@ const MainContent: React.FC = () => {
                 } else if (newAmountPaid > 0) {
                     newStatus = InvoiceStatus.Partial;
                 }
-                const updatedInvoice = { ...invoice, amountPaid: newAmountPaid, status: newStatus, paymentDate: newStatus === InvoiceStatus.Paid ? paymentData.date : invoice.paymentDate };
+                const updatedInvoice = { ...invoice, amountPaid: newAmountPaid, status: newStatus, paymentDate: newStatus === InvoiceStatus.Paid ? paymentData.date : (invoice.paymentDate || paymentData.date) };
                 await dbService.invoices.update(updatedInvoice);
                 setInvoices(prev => prev.map(inv => inv.id === invoice.id ? updatedInvoice : inv));
+            }
+
+            // Check if payment is for a Delivery Note
+            const note = deliveryNotes.find(dn => dn.id === paymentData.invoiceId || dn.documentId === paymentData.invoiceId);
+            if (note) {
+                const newPaymentAmount = (note.paymentAmount || 0) + paymentData.amount;
+                const total = note.totalAmount || 0;
+                let newStatus = note.status;
+                if (newPaymentAmount >= total - 0.1 && total > 0) {
+                    newStatus = 'Payé';
+                } else if (newPaymentAmount > 0) {
+                    newStatus = 'Partiellement payé';
+                }
+                const updatedNote = { 
+                    ...note, 
+                    paymentAmount: newPaymentAmount, 
+                    status: newStatus, 
+                    paymentDate: paymentData.date,
+                    paymentMethod: paymentData.method,
+                    checkNumber: paymentData.reference,
+                    bankName: paymentData.bankName
+                };
+                await dbService.deliveryNotes.update(updatedNote);
+                setDeliveryNotes(prev => prev.map(dn => dn.id === note.id ? updatedNote : dn));
             }
         } catch (e: any) {
             console.error("Error adding payment", e);
@@ -942,9 +968,36 @@ const MainContent: React.FC = () => {
     const createDeliveryNote = async (noteData: Omit<DeliveryNote, 'id'>) => {
         try {
             const documentId = noteData.documentId || generateDocumentId('deliveryNote', deliveryNotes);
-            const newNote: DeliveryNote = { id: generateUUID(), documentId: documentId, ...noteData };
+            const total = noteData.totalAmount || 0;
+            const paid = noteData.paymentAmount || 0;
+            let noteStatus = noteData.status || 'Livré';
+            if (paid >= total - 0.1 && total > 0) {
+                noteStatus = 'Payé';
+            } else if (paid > 0) {
+                noteStatus = 'Partiellement payé';
+            }
+            const newNote: DeliveryNote = { id: generateUUID(), documentId: documentId, ...noteData, status: noteStatus };
             await dbService.deliveryNotes.add(newNote);
             setDeliveryNotes(prev => [newNote, ...prev].sort((a, b) => (b.documentId || b.id).localeCompare(a.documentId || a.id)));
+
+            // If note has payment and is standalone, record in payments
+            if (paid > 0 && !noteData.invoiceId) {
+                const newPayment: Payment = {
+                    id: generateUUID(),
+                    invoiceId: newNote.id,
+                    invoiceNumber: newNote.documentId || newNote.id,
+                    clientId: newNote.clientId,
+                    clientName: newNote.clientName,
+                    date: newNote.paymentDate || newNote.date,
+                    amount: paid,
+                    method: (newNote.paymentMethod as any) || 'Espèces',
+                    reference: newNote.checkNumber,
+                    bankName: newNote.bankName
+                };
+                await dbService.payments.add(newPayment);
+                setPayments(prev => [newPayment, ...prev]);
+            }
+
             // Only deduct stock if this BL is NOT created from an existing invoice that already deducted stock
             const sourceInvoice = noteData.invoiceId ? invoices.find(inv => inv.documentId === noteData.invoiceId || inv.id === noteData.invoiceId) : null;
             const stockAlreadyDeducted = sourceInvoice && sourceInvoice.status !== InvoiceStatus.Draft;
@@ -982,6 +1035,16 @@ const MainContent: React.FC = () => {
     const updateDeliveryNote = async (updatedNote: DeliveryNote) => {
         try {
             const existingNote = deliveryNotes.find(n => n.id === updatedNote.id);
+            const total = updatedNote.totalAmount || 0;
+            const paid = updatedNote.paymentAmount || 0;
+            let noteStatus = updatedNote.status || 'Livré';
+            if (paid >= total - 0.1 && total > 0) {
+                noteStatus = 'Payé';
+            } else if (paid > 0) {
+                noteStatus = 'Partiellement payé';
+            }
+            const noteWithStatus = { ...updatedNote, status: noteStatus };
+
             if (existingNote) {
                 const stockChanges: Map<string, { qty: number, productId: string, variantId?: string, name: string }> = new Map();
                 
@@ -1022,7 +1085,45 @@ const MainContent: React.FC = () => {
                 }
             }
 
-            const savedNote = await dbService.deliveryNotes.update(updatedNote); 
+            // Sync payment record for standalone BL
+            if (!noteWithStatus.invoiceId) {
+                const existingPayment = payments.find(p => p.invoiceId === updatedNote.id || p.invoiceId === updatedNote.documentId);
+                if (paid > 0) {
+                    if (existingPayment) {
+                        const updatedPayment = {
+                            ...existingPayment,
+                            amount: paid,
+                            date: noteWithStatus.paymentDate || noteWithStatus.date,
+                            method: (noteWithStatus.paymentMethod as any) || existingPayment.method || 'Espèces',
+                            reference: noteWithStatus.checkNumber,
+                            bankName: noteWithStatus.bankName,
+                            clientName: noteWithStatus.clientName
+                        };
+                        await dbService.payments.update(updatedPayment);
+                        setPayments(prev => prev.map(p => p.id === existingPayment.id ? updatedPayment : p));
+                    } else {
+                        const newPayment: Payment = {
+                            id: generateUUID(),
+                            invoiceId: noteWithStatus.id,
+                            invoiceNumber: noteWithStatus.documentId || noteWithStatus.id,
+                            clientId: noteWithStatus.clientId,
+                            clientName: noteWithStatus.clientName,
+                            date: noteWithStatus.paymentDate || noteWithStatus.date,
+                            amount: paid,
+                            method: (noteWithStatus.paymentMethod as any) || 'Espèces',
+                            reference: noteWithStatus.checkNumber,
+                            bankName: noteWithStatus.bankName
+                        };
+                        await dbService.payments.add(newPayment);
+                        setPayments(prev => [newPayment, ...prev]);
+                    }
+                } else if (existingPayment && paid === 0) {
+                    await dbService.payments.delete(existingPayment.id);
+                    setPayments(prev => prev.filter(p => p.id !== existingPayment.id));
+                }
+            }
+
+            const savedNote = await dbService.deliveryNotes.update(noteWithStatus); 
             setDeliveryNotes(prev => prev.map(n => n.id === updatedNote.id ? savedNote : n));
         } catch (e: any) {
             console.error("Error updating delivery note", e);
@@ -1042,7 +1143,14 @@ const MainContent: React.FC = () => {
                     await dbService.stockMovements.delete(m.id);
                 }
                 
-                // 2. If this BL was created from an invoice, and that invoice no longer exists,
+                // 2. Clean up any payments linked to this BL
+                const notePayments = payments.filter(p => p.invoiceId === noteId || p.invoiceId === docId);
+                for (const p of notePayments) {
+                    await dbService.payments.delete(p.id);
+                }
+                setPayments(prev => prev.filter(p => p.invoiceId !== noteId && p.invoiceId !== docId));
+
+                // 3. If this BL was created from an invoice, and that invoice no longer exists,
                 // we must revert the original Invoice's stock movements because the Invoice delegated it to this BL.
                 if (note.invoiceId) {
                     const sourceInvoice = invoices.find(inv => inv.documentId === note.invoiceId || inv.id === note.invoiceId);
@@ -1079,6 +1187,16 @@ const MainContent: React.FC = () => {
         if (!note) return;
         try {
             const documentId = generateDocumentId('invoice', invoices);
+            const totalAmount = note.totalAmount || 0;
+            const amountPaid = note.paymentAmount || 0;
+
+            let invoiceStatus = InvoiceStatus.Pending;
+            if (amountPaid >= totalAmount - 0.1 && totalAmount > 0) {
+                invoiceStatus = InvoiceStatus.Paid;
+            } else if (amountPaid > 0) {
+                invoiceStatus = InvoiceStatus.Partial;
+            }
+
             const newInvoiceData: Invoice = { 
                 id: generateUUID(), 
                 documentId: documentId, 
@@ -1086,23 +1204,59 @@ const MainContent: React.FC = () => {
                 clientName: note.clientName, 
                 date: new Date().toISOString().split('T')[0], 
                 dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
-                status: InvoiceStatus.Pending, 
+                status: invoiceStatus, 
                 subject: note.subject ? note.subject : `Facture depuis BL ${note.documentId || note.id}`, 
                 reference: note.reference, 
                 purchaseOrderNumber: note.purchaseOrderNumber, 
                 lineItems: note.lineItems, 
                 subTotal: note.subTotal || 0, 
                 vatAmount: note.vatAmount || 0, 
-                amount: note.totalAmount || 0, 
-                amountPaid: 0
+                amount: totalAmount, 
+                amountPaid: amountPaid,
+                paymentMethod: note.paymentMethod,
+                checkNumber: note.checkNumber,
+                bankName: note.bankName,
+                paymentDate: amountPaid > 0 ? (note.paymentDate || note.date) : undefined
             };
-            
-            // Note: We do NOT deduct stock here because creating a Delivery Note already deducted the stock.
             
             await dbService.invoices.add(newInvoiceData);
             setInvoices(prev => [newInvoiceData, ...prev].sort((a, b) => (b.documentId || b.id).localeCompare(a.documentId || a.id)));
             
-            // Link BL to Invoice
+            // Transfer existing payment records from BL to the new Invoice to prevent double-counting
+            const blPayments = payments.filter(p => p.invoiceId === note.id || p.invoiceId === note.documentId);
+            if (blPayments.length > 0) {
+                for (const p of blPayments) {
+                    const updatedP = {
+                        ...p,
+                        invoiceId: newInvoiceData.id,
+                        invoiceNumber: newInvoiceData.documentId || newInvoiceData.id
+                    };
+                    await dbService.payments.update(updatedP);
+                }
+                setPayments(prev => prev.map(p => (p.invoiceId === note.id || p.invoiceId === note.documentId) ? {
+                    ...p,
+                    invoiceId: newInvoiceData.id,
+                    invoiceNumber: newInvoiceData.documentId || newInvoiceData.id
+                } : p));
+            } else if (amountPaid > 0) {
+                // If payment was recorded on the note but not yet in payments table
+                const newP: Payment = {
+                    id: generateUUID(),
+                    invoiceId: newInvoiceData.id,
+                    invoiceNumber: newInvoiceData.documentId || newInvoiceData.id,
+                    clientId: newInvoiceData.clientId,
+                    clientName: newInvoiceData.clientName,
+                    date: note.paymentDate || note.date,
+                    amount: amountPaid,
+                    method: (note.paymentMethod as any) || 'Espèces',
+                    reference: note.checkNumber,
+                    bankName: note.bankName
+                };
+                await dbService.payments.add(newP);
+                setPayments(prev => [newP, ...prev]);
+            }
+
+            // Link BL to Invoice so BL is no longer counted separately
             const updatedNote = { ...note, invoiceId: newInvoiceData.documentId || newInvoiceData.id };
             await dbService.deliveryNotes.update(updatedNote);
             setDeliveryNotes(prev => prev.map(n => n.id === note.id ? updatedNote : n));
@@ -1301,13 +1455,13 @@ const MainContent: React.FC = () => {
                         <main className="p-4 sm:p-6 lg:p-8 w-full">
                         <Routes>
                             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                            <Route path="/dashboard" element={<Dashboard invoices={invoices} clients={clients} products={products} companySettings={companySettings} creditNotes={creditNotes} expenses={expenses} stockMovements={stockMovements} />} />
-                            <Route path="/statistics" element={<Statistics invoices={invoices} payments={payments} purchaseOrders={purchaseOrders} products={products} creditNotes={creditNotes} expenses={expenses} salaryPayments={salaryPayments} stockMovements={stockMovements} companySettings={companySettings} />} />
+                            <Route path="/dashboard" element={<Dashboard invoices={invoices} deliveryNotes={deliveryNotes} clients={clients} products={products} companySettings={companySettings} creditNotes={creditNotes} expenses={expenses} stockMovements={stockMovements} />} />
+                            <Route path="/statistics" element={<Statistics invoices={invoices} deliveryNotes={deliveryNotes} payments={payments} purchaseOrders={purchaseOrders} products={products} creditNotes={creditNotes} expenses={expenses} salaryPayments={salaryPayments} stockMovements={stockMovements} companySettings={companySettings} />} />
                             <Route path="/sales/quotes" element={<Quotes quotes={quotes} onUpdateQuoteStatus={updateQuoteStatus} onCreateInvoice={createInvoiceFromQuote} onAddQuote={addQuote} onUpdateQuote={updateQuote} onDeleteQuote={deleteQuote} clients={clients} products={products} companySettings={companySettings} generateDocumentId={() => generateDocumentId('quote', quotes)} />} />
                             <Route path="/sales/invoices" element={<InvoicesComponent invoices={invoices} onUpdateInvoiceStatus={updateInvoiceStatus} onAddPayment={addPayment} onCreateInvoice={addInvoice} onUpdateInvoice={updateInvoice} onDeleteInvoice={deleteInvoice} onCreateCreditNote={createCreditNoteFromInvoice} clients={clients} products={products} companySettings={companySettings} generateDocumentId={() => generateDocumentId('invoice', invoices)} />} />
                             <Route path="/sales/credit-notes" element={<CreditNotesComponent creditNotes={creditNotes} onUpdateCreditNoteStatus={updateCreditNoteStatus} onCreateCreditNote={addCreditNote} onUpdateCreditNote={updateCreditNote} onDeleteCreditNote={deleteCreditNote} clients={clients} products={products} companySettings={companySettings} generateDocumentId={() => generateDocumentId('creditNote', creditNotes)} />} />
-                            <Route path="/sales/payments" element={<PaymentTracking invoices={invoices} payments={payments} onAddPayment={addPayment} clients={clients} companySettings={companySettings} />} />
-                            <Route path="/sales/delivery" element={<DeliveryNotesComponent deliveryNotes={deliveryNotes} invoices={invoices} onCreateDeliveryNote={createDeliveryNote} onUpdateDeliveryNote={updateDeliveryNote} onDeleteDeliveryNote={deleteDeliveryNote} onCreateInvoice={createInvoiceFromDeliveryNote} clients={clients} products={products} companySettings={companySettings} generateDocumentId={() => generateDocumentId('deliveryNote', deliveryNotes)} />} />
+                            <Route path="/sales/payments" element={<PaymentTracking invoices={invoices} deliveryNotes={deliveryNotes} payments={payments} onAddPayment={addPayment} clients={clients} companySettings={companySettings} />} />
+                            <Route path="/sales/delivery" element={<DeliveryNotesComponent deliveryNotes={deliveryNotes} invoices={invoices} onAddPayment={addPayment} onCreateDeliveryNote={createDeliveryNote} onUpdateDeliveryNote={updateDeliveryNote} onDeleteDeliveryNote={deleteDeliveryNote} onCreateInvoice={createInvoiceFromDeliveryNote} clients={clients} products={products} companySettings={companySettings} generateDocumentId={() => generateDocumentId('deliveryNote', deliveryNotes)} />} />
                             <Route path="/purchases/orders" element={<PurchaseOrders orders={purchaseOrders} suppliers={suppliers} products={products} onAddOrder={addPurchaseOrder} onUpdateOrder={updatePurchaseOrder} onUpdateStatus={updatePurchaseOrderStatus} onDeleteOrder={deletePurchaseOrder} onConvertToInvoice={(order) => navigate('/sales/invoices', { state: { prefilledOrder: order } })} companySettings={companySettings} generateDocumentId={() => generateDocumentId('purchaseOrder', purchaseOrders)} />} />
                             <Route path="/stock" element={<StockManagement products={products} movements={stockMovements} onAddMovement={addStockMovement} />} />
                             <Route path="/expenses" element={<Expenses expenses={expenses} onAddExpense={addExpense} onUpdateExpense={updateExpense} onDeleteExpense={deleteExpense} companySettings={companySettings} />} />

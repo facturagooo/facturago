@@ -50,38 +50,24 @@ export const resetDBCache = () => {
     pendingCompanyPromise = null;
 };
 
-export const getCurrentUserAndCompany = async () => {
+export const getCurrentUserAndCompany = async (): Promise<{ userId: string | null, companyId: string | null }> => {
     return retry(async () => {
         try {
-            const sessionResponse = await supabase.auth.getSession().catch(err => {
+            // First check if Supabase has a valid session in memory / local store
+            let { data: { session }, error: sessionError } = await supabase.auth.getSession().catch(err => {
                 console.warn("getSession error caught:", err);
                 return { data: { session: null }, error: err };
             });
-            let session = sessionResponse?.data?.session || null;
-            const authError = sessionResponse?.error;
 
-            if (authError) {
-                const errMsg = authError.message || (typeof authError === 'string' ? authError : '') || '';
-                if (
-                    errMsg.includes('Refresh Token') || 
-                    errMsg.includes('JWT') || 
-                    errMsg.includes('Invalid') || 
-                    errMsg.includes('Auth session') ||
-                    errMsg.includes('not_found')
-                ) {
-                    console.warn("Auth session error in getCurrentUserAndCompany, clearing session:", errMsg);
-                    await supabase.auth.signOut().catch(() => {});
-                    for (let i = localStorage.length - 1; i >= 0; i--) {
-                        const key = localStorage.key(i);
-                        if (key && (key.includes('supabase.auth') || key.includes('sb-') || key.includes('token'))) {
-                            localStorage.removeItem(key);
-                        }
-                    }
-                    return { userId: null, companyId: null };
+            // If no session found, try getUser as a fallback (it verifies against Supabase or uses cached local token)
+            if (!session?.user) {
+                const { data: userData } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+                if (userData?.user) {
+                    session = { user: userData.user } as any;
                 }
             }
 
-            // Only attempt refresh if session exists and is expiring within 60s
+            // If session exists and is expiring within 60s, attempt refresh
             if (session?.expires_at) {
                 const expiresAt = session.expires_at * 1000;
                 const now = Date.now();
@@ -93,25 +79,35 @@ export const getCurrentUserAndCompany = async () => {
                         });
                         if (refreshResponse?.data?.session) {
                             session = refreshResponse.data.session;
-                        } else if (refreshResponse?.error) {
-                            console.warn("Session refresh failed, clearing stale auth:", refreshResponse.error.message);
-                            await supabase.auth.signOut().catch(() => {});
-                            for (let i = localStorage.length - 1; i >= 0; i--) {
-                                const key = localStorage.key(i);
-                                if (key && (key.includes('supabase.auth') || key.includes('sb-') || key.includes('token'))) {
-                                    localStorage.removeItem(key);
-                                }
-                            }
-                            return { userId: null, companyId: null };
                         }
                     } catch (rErr) {
                         console.warn("Exception during session refresh:", rErr);
-                        return { userId: null, companyId: null };
                     }
                 }
             }
 
-            const currentUserId = session?.user?.id || null;
+            // Fallback: Check localStorage for any stored Supabase user id if session is still null
+            let currentUserId = session?.user?.id || null;
+            if (!currentUserId && typeof window !== 'undefined' && window.localStorage) {
+                try {
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && (key.includes('supabase.auth.token') || key.includes('sb-') && key.includes('auth-token'))) {
+                            const val = localStorage.getItem(key);
+                            if (val) {
+                                const parsed = JSON.parse(val);
+                                const foundId = parsed?.user?.id || parsed?.currentSession?.user?.id;
+                                if (foundId) {
+                                    currentUserId = foundId;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } catch (storageErr) {
+                    console.warn("Error parsing localStorage fallback auth:", storageErr);
+                }
+            }
 
             // Clear cache if user changed
             if (currentUserId !== cachedUserId) {
@@ -126,7 +122,6 @@ export const getCurrentUserAndCompany = async () => {
             if (pendingCompanyPromise) return pendingCompanyPromise;
 
             pendingCompanyPromise = (async () => {
-                // Fallback: The user is the owner, userId is the companyId
                 cachedCompanyId = currentUserId;
                 return { userId: currentUserId, companyId: currentUserId };
             })();
@@ -134,21 +129,10 @@ export const getCurrentUserAndCompany = async () => {
             return pendingCompanyPromise;
         } catch (e: any) {
             console.error("Error in getCurrentUserAndCompany:", e);
-            const errMsg = e?.message || '';
-            if (errMsg.includes('Refresh Token') || errMsg.includes('Invalid') || errMsg.includes('not_found')) {
-                await supabase.auth.signOut().catch(() => {});
-                for (let i = localStorage.length - 1; i >= 0; i--) {
-                    const key = localStorage.key(i);
-                    if (key && (key.includes('supabase.auth') || key.includes('sb-') || key.includes('token'))) {
-                        localStorage.removeItem(key);
-                    }
-                }
-                return { userId: null, companyId: null };
-            }
             if (e?.message?.includes('Failed to fetch') || e?.name === 'TypeError') {
                 throw e; // Let retry handle it
             }
-            return { userId: null, companyId: null };
+            return { userId: cachedUserId, companyId: cachedCompanyId || cachedUserId };
         }
     });
 };
@@ -156,7 +140,7 @@ export const getCurrentUserAndCompany = async () => {
 // Listen for auth changes to update the cache
 supabase.auth.onAuthStateChange((_event, session) => {
     cachedUserId = session?.user?.id || null;
-    cachedCompanyId = null; // Reset company cache to force re-fetch
+    cachedCompanyId = cachedUserId;
 });
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number = 120000): Promise<T> => {

@@ -2,12 +2,13 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
-import { Invoice, InvoiceStatus, Client, Product, CompanySettings, CreditNote, CreditNoteStatus, Expense, StockMovement } from '../types';
+import { Invoice, InvoiceStatus, Client, Product, CompanySettings, CreditNote, CreditNoteStatus, Expense, StockMovement, DeliveryNote } from '../types';
 import { Users, Package, FileText, AlertCircle, AlertTriangle, DollarSign, Archive, CheckCircle, ArrowRight, UserPlus, ChevronRight, TrendingUp, CalendarDays, Filter, Clock, UserCheck, Layers, BarChart3, Receipt, Users2, Box, ShieldAlert, Wallet } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface DashboardProps {
     invoices: Invoice[];
+    deliveryNotes?: DeliveryNote[];
     clients: Client[];
     products: Product[];
     companySettings?: CompanySettings | null;
@@ -48,7 +49,7 @@ const ShortcutCard = ({ icon: Icon, label, desc, onClick, colorClass }: { icon: 
 
 type ChartPeriod = 'day' | 'week' | 'month' | 'year' | 'custom';
 
-const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, companySettings, creditNotes = [], expenses = [], stockMovements = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ invoices, deliveryNotes = [], clients, products, companySettings, creditNotes = [], expenses = [], stockMovements = [] }) => {
     const navigate = useNavigate();
     const { t, language } = useLanguage();
     const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('year');
@@ -81,6 +82,25 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
             }
         });
 
+        // Add standalone Delivery Notes (not converted to invoice)
+        deliveryNotes.forEach(dn => {
+            if (dn.invoiceId || dn.status === 'Brouillon') return;
+            const total = dn.totalAmount || 0;
+            const paid = dn.paymentAmount || 0;
+
+            if (dn.status === 'Payé' || (paid >= total - 0.1 && total > 0)) {
+                totalRevenue += (total > 0 ? total : paid);
+            } else if (paid > 0) {
+                totalRevenue += paid;
+            }
+
+            const remaining = Math.max(0, total - paid);
+            if (remaining > 0.01) {
+                unpaidInvoicesCount++;
+                unpaidAmount += remaining;
+            }
+        });
+
         const validatedCreditNotesAmount = creditNotes
             .filter(cn => cn.status === CreditNoteStatus.Validated)
             .reduce((sum, cn) => sum + cn.amount, 0);
@@ -102,7 +122,7 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
             .reduce((sum, exp) => sum + exp.amount, 0);
 
         return { totalRevenue, unpaidInvoicesCount, unpaidAmount, monthlyExpenses };
-    }, [invoices, creditNotes, expenses]);
+    }, [invoices, deliveryNotes, creditNotes, expenses]);
 
     const stats = [
         { 
@@ -143,24 +163,34 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
         const today = new Date();
         let data: { name: string; fullDate?: string; Revenu: number }[] = [];
 
-        const getPaidInvoices = (start: Date, end: Date) => {
-            return invoices.filter(inv => {
+        const getPaidItems = (start: Date, end: Date) => {
+            const paidInvs = invoices.filter(inv => {
                 if (inv.status !== InvoiceStatus.Paid) return false;
                 const d = new Date(inv.paymentDate || inv.date);
                 return d >= start && d <= end;
-            });
+            }).map(inv => ({ date: inv.paymentDate || inv.date, amount: inv.amount }));
+
+            const paidBLs = (deliveryNotes || []).filter(dn => {
+                if (dn.invoiceId || dn.status === 'Brouillon') return false;
+                const paid = dn.paymentAmount || 0;
+                if (paid <= 0 && dn.status !== 'Payé') return false;
+                const d = new Date(dn.paymentDate || dn.date);
+                return d >= start && d <= end;
+            }).map(dn => ({ date: dn.paymentDate || dn.date, amount: dn.paymentAmount || dn.totalAmount || 0 }));
+
+            return [...paidInvs, ...paidBLs];
         };
 
         if (chartPeriod === 'day') {
             const startOfDay = new Date(today.setHours(0,0,0,0));
             const endOfDay = new Date(today.setHours(23,59,59,999));
-            const relevantInvoices = getPaidInvoices(startOfDay, endOfDay);
+            const relevantItems = getPaidItems(startOfDay, endOfDay);
 
             for (let i = 0; i <= 24; i += 4) {
                 const label = `${i}h`;
-                const amount = relevantInvoices.reduce((acc, inv) => {
-                    const h = new Date(inv.paymentDate || inv.date).getHours();
-                    return (h >= i && h < i + 4) ? acc + inv.amount : acc;
+                const amount = relevantItems.reduce((acc, item) => {
+                    const h = new Date(item.date).getHours();
+                    return (h >= i && h < i + 4) ? acc + item.amount : acc;
                 }, 0);
                 data.push({ name: label, Revenu: amount });
             }
@@ -175,14 +205,14 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
             const endOfWeek = new Date(curr.setDate(last));
             endOfWeek.setHours(23,59,59,999);
 
-            const relevantInvoices = getPaidInvoices(startOfWeek, endOfWeek);
+            const relevantItems = getPaidItems(startOfWeek, endOfWeek);
             const days = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
             data = days.map((day, index) => {
-                const amount = relevantInvoices.reduce((acc, inv) => {
-                    let d = new Date(inv.paymentDate || inv.date).getDay();
+                const amount = relevantItems.reduce((acc, item) => {
+                    let d = new Date(item.date).getDay();
                     let mappedIndex = d === 0 ? 6 : d - 1;
-                    return mappedIndex === index ? acc + inv.amount : acc;
+                    return mappedIndex === index ? acc + item.amount : acc;
                 }, 0);
                 return { name: day, Revenu: amount };
             });
@@ -190,13 +220,13 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
         } else if (chartPeriod === 'month') {
             const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
             const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-            const relevantInvoices = getPaidInvoices(startOfMonth, endOfMonth);
+            const relevantItems = getPaidItems(startOfMonth, endOfMonth);
             const daysInMonth = endOfMonth.getDate();
 
             for (let i = 1; i <= daysInMonth; i++) {
-                const amount = relevantInvoices.reduce((acc, inv) => {
-                    const d = new Date(inv.paymentDate || inv.date).getDate();
-                    return d === i ? acc + inv.amount : acc;
+                const amount = relevantItems.reduce((acc, item) => {
+                    const d = new Date(item.date).getDate();
+                    return d === i ? acc + item.amount : acc;
                 }, 0);
                 data.push({ name: `${i}`, Revenu: amount });
             }
@@ -204,13 +234,13 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
         } else if (chartPeriod === 'year') {
             const startOfYear = new Date(today.getFullYear(), 0, 1);
             const endOfYear = new Date(today.getFullYear(), 11, 31);
-            const relevantInvoices = getPaidInvoices(startOfYear, endOfYear);
+            const relevantItems = getPaidItems(startOfYear, endOfYear);
             
             const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
             data = months.map((month, index) => {
-                const amount = relevantInvoices.reduce((acc, inv) => {
-                    const m = new Date(inv.paymentDate || inv.date).getMonth();
-                    return m === index ? acc + inv.amount : acc;
+                const amount = relevantItems.reduce((acc, item) => {
+                    const m = new Date(item.date).getMonth();
+                    return m === index ? acc + item.amount : acc;
                 }, 0);
                 return { name: month, Revenu: amount };
             });
@@ -220,15 +250,15 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
             const end = new Date(customEndDate);
             end.setHours(23,59,59,999);
             
-            const relevantInvoices = getPaidInvoices(start, end);
+            const relevantItems = getPaidItems(start, end);
             
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                 const dateStr = d.toLocaleDateString(language === 'ar' ? 'ar-MA' : 'fr-FR', { day: '2-digit', month: '2-digit' });
                 const isoDate = d.toISOString().split('T')[0];
                 
-                const amount = relevantInvoices.reduce((acc, inv) => {
-                    const invDate = new Date(inv.paymentDate || inv.date).toISOString().split('T')[0];
-                    return invDate === isoDate ? acc + inv.amount : acc;
+                const amount = relevantItems.reduce((acc, item) => {
+                    const itemDate = new Date(item.date).toISOString().split('T')[0];
+                    return itemDate === isoDate ? acc + item.amount : acc;
                 }, 0);
                 
                 data.push({ name: dateStr, fullDate: isoDate, Revenu: amount });
@@ -236,7 +266,7 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
         }
 
         return data;
-    }, [invoices, chartPeriod, customStartDate, customEndDate, language]);
+    }, [invoices, deliveryNotes, chartPeriod, customStartDate, customEndDate, language]);
 
     const lowStockProducts = useMemo(() => {
         return products
@@ -256,6 +286,20 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
                 });
             }
         });
+
+        (deliveryNotes || []).forEach(dn => {
+            if (!dn.invoiceId && dn.status !== 'Brouillon' && (dn.status === 'Payé' || dn.status === 'Partiellement payé' || (dn.paymentAmount || 0) > 0)) {
+                const total = dn.totalAmount || 0;
+                const paid = dn.paymentAmount || 0;
+                const ratio = dn.status === 'Payé' || paid >= total - 0.1 ? 1 : (total > 0 ? (paid / total) : 0);
+
+                dn.lineItems.forEach(item => {
+                    if (item.productId) {
+                        salesMap[item.productId] = (salesMap[item.productId] || 0) + (item.quantity * ratio);
+                    }
+                });
+            }
+        });
         
         return Object.entries(salesMap)
             .map(([id, qty]) => {
@@ -265,7 +309,7 @@ const Dashboard: React.FC<DashboardProps> = ({ invoices, clients, products, comp
             .filter(Boolean)
             .sort((a, b) => (b?.qty || 0) - (a?.qty || 0))
             .slice(0, 3);
-    }, [invoices, products]);
+    }, [invoices, deliveryNotes, products]);
 
     const recentInvoices = useMemo(() => {
         return [...invoices]

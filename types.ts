@@ -272,6 +272,7 @@ export interface DeliveryNote {
     vatAmount?: number;
     totalAmount?: number;
     paymentAmount?: number;
+    paymentDate?: string;
     notes?: string;
 }
 
