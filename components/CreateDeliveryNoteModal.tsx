@@ -25,7 +25,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
     
     const isModeTTC = companySettings?.priceDisplayMode === 'TTC';
     const qtyColLabel = companySettings?.documentColumns?.find(c => c.id === 'quantity')?.label || t('quantity');
-    const vatOptions = language === 'es' ? [0, 21, 10, 4] : [0, 20, 14, 10, 7];
+    const vatOptions = language === 'es' ? [21, 10, 4, 0] : [20, 14, 10, 7, 0];
 
     const [clientId, setClientId] = useState('');
     const [documentId, setDocumentId] = useState('');
@@ -119,7 +119,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                 setNotes('');
                 setLineItems([]);
                 setPaymentAmount(0);
-                setTempVat(0);
+                setTempVat(companySettings?.defaultTva ?? (language === 'es' ? 21 : 20));
                 setPaymentMethod(language === 'es' ? 'Efectivo' : 'Espèces');
                 setShowPaymentMethodField(false);
                 setCheckNumber('');
@@ -137,7 +137,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
         setTempName('');
         setTempDesc('');
         setTempPrice('0');
-        setTempVat(0);
+        setTempVat(companySettings?.defaultTva ?? (language === 'es' ? 21 : 20));
         setItemQuantity('1');
         setTempUnit('');
         setTempDays('1');
@@ -191,9 +191,9 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
             if (product) {
                 setTempName(stripHtml(product.description || product.name));
                 setTempDesc(stripHtml(product.description || ''));
-                const priceToDisplay = product.salePrice;
+                const priceToDisplay = isModeTTC ? (product.salePrice * (1 + product.vat / 100)) : product.salePrice;
                 setTempPrice(formatDecimalForInput(priceToDisplay, language));
-                setTempVat(0);
+                setTempVat(product.vat);
                 setTempProductCode(product.productCode);
                 setTempUnit(product.unitOfMeasure || '');
             }
@@ -211,7 +211,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                 setTempName(`${baseName} (${variant.attributeValue})`);
                 
                 if (variant.salePrice !== undefined && variant.salePrice > 0) {
-                    const priceToDisplay = variant.salePrice;
+                    const priceToDisplay = isModeTTC ? (variant.salePrice * (1 + product.vat / 100)) : variant.salePrice;
                     setTempPrice(formatDecimalForInput(priceToDisplay, language));
                 }
             }
@@ -322,9 +322,11 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
 
     const totals = useMemo(() => {
         const subTotal = lineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity * getLineMultiplier(item)), 0);
-        const vatAmount = lineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity * getLineMultiplier(item) * (((typeof item.vat === 'number' ? item.vat : 0)) / 100)), 0);
-        const totalTTC = subTotal + vatAmount;
-        return { subTotal, vatAmount, totalTTC };
+        // Delivery Notes do not charge VAT (TVA is not calculated on BL total),
+        // but item.vat is preserved on each line item so it gets computed when converted to an invoice.
+        const vatAmount = 0;
+        const totalAmount = subTotal;
+        return { subTotal, vatAmount, totalTTC: totalAmount };
     }, [lineItems, calculationMode]);
 
     const handleSave = async () => {
@@ -774,6 +776,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                                             {isM2 && <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-500 uppercase">M²</th>}
                                             {isML && <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-500 uppercase">ML</th>}
                                             {isDays && <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-500 uppercase">{t('uDay')}</th>}
+                                            <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-500 uppercase">{t('vat')}</th>
                                             <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase">{isModeTTC ? t('puTTCLabel') : t('puHTLabel')}</th>
                                             <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase">{isModeTTC ? t('totalTTCLabel') : t('totalHTLabel')}</th>
                                             <th className="px-4 py-3 w-10"></th>
@@ -781,7 +784,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                                     </thead>
                                     <tbody className="bg-white divide-y divide-slate-100">
                                         {(lineItems || []).map(item => {
-                                            const itemVat = typeof item.vat === 'number' ? item.vat : 0;
+                                            const itemVat = typeof item.vat === 'number' ? item.vat : 20;
                                             const displayPrice = isModeTTC ? (item.unitPrice * (1 + itemVat/100)) : item.unitPrice;
                                             const displayLineTotal = (item.quantity || 0) * getLineMultiplier(item) * (displayPrice || 0);
                                             
@@ -804,8 +807,8 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                                                         rows={1}
                                                         className="w-full p-1 text-left border-none focus:ring-0 text-[11px] font-bold bg-transparent resize-y overflow-hidden leading-tight"
                                                         onInput={(e) => {
-                                                            e.currentTarget.style.height = 'auto';
-                                                            e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
+                                                             e.currentTarget.style.height = 'auto';
+                                                             e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
                                                         }}
                                                     />
                                                 </td>
@@ -868,6 +871,15 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                                                     />
                                                 </td>
                                             )}
+                                                <td className="px-4 py-3 text-center text-xs">
+                                                    <select 
+                                                        value={typeof item.vat === 'number' ? item.vat : 20} 
+                                                        onChange={(e) => updateLineItem(item.id, { vat: parseInt(e.target.value) })}
+                                                        className="w-16 p-1 text-center border border-slate-200 rounded-lg text-xs font-semibold bg-slate-50/50 focus:bg-white focus:border-emerald-500"
+                                                    >
+                                                        {vatOptions.map(v => <option key={v} value={v}>{v}%</option>)}
+                                                    </select>
+                                                </td>
                                                 <td className="px-4 py-3 text-right text-xs">
                                                     <input 
                                                         type="text" 
@@ -892,7 +904,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                             {/* Mobile Card View */}
                             <div className="md:hidden space-y-4">
                                 {(lineItems || []).map(item => {
-                                    const itemVat = typeof item.vat === 'number' ? item.vat : 0;
+                                    const itemVat = typeof item.vat === 'number' ? item.vat : 20;
                                     const displayPrice = isModeTTC ? (item.unitPrice * (1 + itemVat/100)) : item.unitPrice;
                                     const displayLineTotal = (item.quantity || 0) * getLineMultiplier(item) * (displayPrice || 0);
                                     
@@ -930,7 +942,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                                                 </button>
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-3 gap-3">
                                                 <div className="space-y-1">
                                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('quantity')}</label>
                                                     <input 
@@ -951,6 +963,16 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                                                         }}
                                                         className="w-full h-10 rounded-lg border-slate-200 bg-white text-sm font-bold px-3"
                                                     />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('vat')}</label>
+                                                    <select 
+                                                        value={typeof item.vat === 'number' ? item.vat : 20} 
+                                                        onChange={(e) => updateLineItem(item.id, { vat: parseInt(e.target.value) })}
+                                                        className="w-full h-10 rounded-lg border-slate-200 bg-white text-xs font-bold px-2"
+                                                    >
+                                                        {vatOptions.map(v => <option key={v} value={v}>{v}%</option>)}
+                                                    </select>
                                                 </div>
                                             </div>
 
@@ -1032,10 +1054,10 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                         </div>
 
                         <div className="space-y-3">
-                            <div className="flex justify-between text-sm text-slate-500"><span>{t('totalHT')}</span><span>{totals.subTotal.toLocaleString(language === 'ar' ? 'ar-MA' : 'fr-FR', { style: 'currency', currency: companySettings?.defaultCurrencyCode || 'MAD' })}</span></div>
-                            <div className="flex justify-between text-sm text-slate-500"><span>{t('vat')}</span><span>{totals.vatAmount.toLocaleString(language === 'ar' ? 'ar-MA' : 'fr-FR', { style: 'currency', currency: companySettings?.defaultCurrencyCode || 'MAD' })}</span></div>
-                            <div className="h-px bg-slate-200 my-1"></div>
-                            <div className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-100"><span className="text-base font-bold text-slate-900">{t('totalTTC')}</span><span className="text-xl font-black text-emerald-700">{totals.totalTTC.toLocaleString(language === 'ar' ? 'ar-MA' : 'fr-FR', { style: 'currency', currency: companySettings?.defaultCurrencyCode || 'MAD' })}</span></div>
+                            <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <span className="text-base font-bold text-slate-900">{t('total') || 'Total'}</span>
+                                <span className="text-xl font-black text-emerald-700">{totals.subTotal.toLocaleString(language === 'ar' ? 'ar-MA' : 'fr-FR', { style: 'currency', currency: companySettings?.defaultCurrencyCode || 'MAD' })}</span>
+                            </div>
                             <div className={`mt-4 p-4 rounded-xl border-2 transition-all ${remainingAmount > 0 ? 'bg-orange-50 border-orange-200 text-orange-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
                                 <div className="flex justify-between items-center">
                                     <span className="text-[10px] font-black uppercase tracking-widest">{t('remaining')}</span>
