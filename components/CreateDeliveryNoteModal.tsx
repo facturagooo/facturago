@@ -25,7 +25,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
     
     const isModeTTC = companySettings?.priceDisplayMode === 'TTC';
     const qtyColLabel = companySettings?.documentColumns?.find(c => c.id === 'quantity')?.label || t('quantity');
-    const vatOptions = language === 'es' ? [21, 10, 4, 0] : [20, 14, 10, 7, 0];
+    const vatOptions = language === 'es' ? [0, 21, 10, 4] : [0, 20, 14, 10, 7];
 
     const [clientId, setClientId] = useState('');
     const [documentId, setDocumentId] = useState('');
@@ -119,7 +119,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                 setNotes('');
                 setLineItems([]);
                 setPaymentAmount(0);
-                setTempVat(companySettings?.defaultTva ?? (language === 'es' ? 21 : 20));
+                setTempVat(0);
                 setPaymentMethod(language === 'es' ? 'Efectivo' : 'Espèces');
                 setShowPaymentMethodField(false);
                 setCheckNumber('');
@@ -137,7 +137,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
         setTempName('');
         setTempDesc('');
         setTempPrice('0');
-        setTempVat(companySettings?.defaultTva ?? (language === 'es' ? 21 : 20));
+        setTempVat(0);
         setItemQuantity('1');
         setTempUnit('');
         setTempDays('1');
@@ -191,9 +191,9 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
             if (product) {
                 setTempName(stripHtml(product.description || product.name));
                 setTempDesc(stripHtml(product.description || ''));
-                const priceToDisplay = isModeTTC ? (product.salePrice * (1 + product.vat / 100)) : product.salePrice;
+                const priceToDisplay = product.salePrice;
                 setTempPrice(formatDecimalForInput(priceToDisplay, language));
-                setTempVat(product.vat);
+                setTempVat(0);
                 setTempProductCode(product.productCode);
                 setTempUnit(product.unitOfMeasure || '');
             }
@@ -211,7 +211,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                 setTempName(`${baseName} (${variant.attributeValue})`);
                 
                 if (variant.salePrice !== undefined && variant.salePrice > 0) {
-                    const priceToDisplay = isModeTTC ? (variant.salePrice * (1 + product.vat / 100)) : variant.salePrice;
+                    const priceToDisplay = variant.salePrice;
                     setTempPrice(formatDecimalForInput(priceToDisplay, language));
                 }
             }
@@ -322,7 +322,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
 
     const totals = useMemo(() => {
         const subTotal = lineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity * getLineMultiplier(item)), 0);
-        const vatAmount = lineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity * getLineMultiplier(item) * (item.vat / 100)), 0);
+        const vatAmount = lineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity * getLineMultiplier(item) * (((typeof item.vat === 'number' ? item.vat : 0)) / 100)), 0);
         const totalTTC = subTotal + vatAmount;
         return { subTotal, vatAmount, totalTTC };
     }, [lineItems, calculationMode]);
@@ -781,7 +781,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                                     </thead>
                                     <tbody className="bg-white divide-y divide-slate-100">
                                         {(lineItems || []).map(item => {
-                                            const itemVat = typeof item.vat === 'number' ? item.vat : 20;
+                                            const itemVat = typeof item.vat === 'number' ? item.vat : 0;
                                             const displayPrice = isModeTTC ? (item.unitPrice * (1 + itemVat/100)) : item.unitPrice;
                                             const displayLineTotal = (item.quantity || 0) * getLineMultiplier(item) * (displayPrice || 0);
                                             
@@ -892,7 +892,7 @@ const CreateDeliveryNoteModal: React.FC<CreateDeliveryNoteModalProps> = ({ isOpe
                             {/* Mobile Card View */}
                             <div className="md:hidden space-y-4">
                                 {(lineItems || []).map(item => {
-                                    const itemVat = typeof item.vat === 'number' ? item.vat : 20;
+                                    const itemVat = typeof item.vat === 'number' ? item.vat : 0;
                                     const displayPrice = isModeTTC ? (item.unitPrice * (1 + itemVat/100)) : item.unitPrice;
                                     const displayLineTotal = (item.quantity || 0) * getLineMultiplier(item) * (displayPrice || 0);
                                     

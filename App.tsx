@@ -1187,7 +1187,25 @@ const MainContent: React.FC = () => {
         if (!note) return;
         try {
             const documentId = generateDocumentId('invoice', invoices);
-            const totalAmount = note.totalAmount || 0;
+            const defaultVat = 20;
+
+            const getMultiplier = (item: any) => {
+                const mode = item.calculationMode || note.lineItems?.[0]?.calculationMode || 'piece';
+                if (mode === 'm2') return (item.length || 1) * (item.height || 1);
+                if (mode === 'ml') return (item.length || 1);
+                if (mode === 'kg') return (item.weight || 1);
+                if (mode === 'days') return (item.days || 1);
+                return 1;
+            };
+
+            const convertedLineItems = (note.lineItems || []).map(item => ({
+                ...item,
+                vat: (item.vat === 0 || item.vat === undefined) ? defaultVat : item.vat
+            }));
+
+            const subTotal = convertedLineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity * getMultiplier(item)), 0);
+            const vatAmount = convertedLineItems.reduce((acc, item) => acc + (item.unitPrice * item.quantity * getMultiplier(item) * (item.vat / 100)), 0);
+            const totalAmount = subTotal + vatAmount;
             const amountPaid = note.paymentAmount || 0;
 
             let invoiceStatus = InvoiceStatus.Pending;
@@ -1208,9 +1226,9 @@ const MainContent: React.FC = () => {
                 subject: note.subject ? note.subject : `Facture depuis BL ${note.documentId || note.id}`, 
                 reference: note.reference, 
                 purchaseOrderNumber: note.purchaseOrderNumber, 
-                lineItems: note.lineItems, 
-                subTotal: note.subTotal || 0, 
-                vatAmount: note.vatAmount || 0, 
+                lineItems: convertedLineItems, 
+                subTotal: subTotal, 
+                vatAmount: vatAmount, 
                 amount: totalAmount, 
                 amountPaid: amountPaid,
                 paymentMethod: note.paymentMethod,
