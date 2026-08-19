@@ -74,6 +74,7 @@ export const translations = {
     manage: 'Gérer',
     history: 'Historique',
     sendWhatsApp: 'Envoyer WhatsApp',
+    pdfDownloadedForWhatsApp: 'Le fichier PDF a été téléchargé sur votre appareil. Vous pouvez maintenant le joindre à votre message WhatsApp.',
     
     // Form Labels
     client: 'Client',
@@ -444,6 +445,7 @@ export const translations = {
     manage: 'Gestionar',
     history: 'Historial',
     sendWhatsApp: 'Enviar WhatsApp',
+    pdfDownloadedForWhatsApp: 'El archivo PDF se ha descargado en su dispositivo. Ahora puede adjuntarlo a su mensaje de WhatsApp.',
 
     // Form Labels
     client: 'Cliente',
@@ -814,6 +816,7 @@ export const translations = {
     manage: 'Manage',
     history: 'History',
     sendWhatsApp: 'Send WhatsApp',
+    pdfDownloadedForWhatsApp: 'The PDF file has been downloaded to your device. You can now attach it to your WhatsApp message.',
 
     // Form Labels
     client: 'Client',
@@ -1184,6 +1187,7 @@ export const translations = {
     manage: 'إدارة',
     history: 'تاريخ',
     sendWhatsApp: 'إرسال واتساب',
+    pdfDownloadedForWhatsApp: 'تم تنزيل ملف PDF على جهازك. يمكنك الآن إرفاقه في محادثة واتساب.',
 
     // Form Labels
     client: 'العميل',

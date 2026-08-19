@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { X, Download, Printer, MessageSquare, Loader2 } from 'lucide-react';
+import { X, Download, Printer, MessageSquare, Loader2, CheckCircle } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { generateDocumentHTML, generatePDF, printDocument, generatePDFBlob, DocumentType, DocumentData } from '../services/pdfService';
 import { shareDocument } from '../services/shareService';
@@ -27,9 +27,9 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
     const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
     const [isVisible, setIsVisible] = useState(false);
     const [isActionLoading, setIsActionLoading] = useState(false);
-    const [isGeneratingBackground, setIsGeneratingBackground] = useState(false);
     const [htmlContent, setHtmlContent] = useState<string>('');
     const [preGeneratedBlob, setPreGeneratedBlob] = useState<Blob | null>(null);
+    const [shareNotification, setShareNotification] = useState<string | null>(null);
     const [scale, setScale] = useState(1);
     const previewContainerRef = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -58,32 +58,34 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
     useEffect(() => {
         if (isOpen) {
-            setTimeout(() => setIsVisible(true), 10);
+            setIsVisible(true);
+            setShareNotification(null);
             try {
                 const html = generateDocumentHTML(type, doc, settings, recipient);
                 setHtmlContent(html);
                 
-                // Pre-generate blob for faster sharing/downloading
-                if (!isGeneratingBackground) {
-                    setIsGeneratingBackground(true);
-                    setTimeout(async () => {
-                        try {
-                            const blob = await generatePDFBlob(type, doc, settings, recipient);
+                // Immediately pre-generate blob in background so navigator.share is ready on click
+                let isMounted = true;
+                generatePDFBlob(type, doc, settings, recipient)
+                    .then((blob) => {
+                        if (isMounted) {
                             setPreGeneratedBlob(blob);
-                        } catch (err) {
-                            console.error("Background PDF generation failed:", err);
-                        } finally {
-                            setIsGeneratingBackground(false);
                         }
-                    }, 500);
-                }
+                    })
+                    .catch((err) => {
+                        console.error("Background PDF generation failed:", err);
+                    });
+
+                return () => {
+                    isMounted = false;
+                };
             } catch (error) {
                 console.error("Error generating preview:", error);
             }
         } else {
             setIsVisible(false);
             setPreGeneratedBlob(null);
-            setIsGeneratingBackground(false);
+            setShareNotification(null);
         }
     }, [isOpen, type, doc, settings, recipient]);
 
@@ -126,10 +128,13 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
     const handleShare = async () => {
         if (isActionLoading) return;
         setIsActionLoading(true);
+        setShareNotification(null);
         try {
-            // We pass the pre-generated blob to the share service if available
-            // We'll need to update shareDocument to accept an optional blob
-            await shareDocument(type, doc, settings, recipient, isRTL, language, preGeneratedBlob || undefined);
+            const result = await shareDocument(type, doc, settings, recipient, isRTL, language, preGeneratedBlob || undefined);
+            if (result.method === 'download_and_whatsapp') {
+                setShareNotification(t('pdfDownloadedForWhatsApp') || 'Le fichier PDF a été téléchargé sur votre appareil. Vous pouvez maintenant le joindre à votre message WhatsApp.');
+                setTimeout(() => setShareNotification(null), 9000);
+            }
         } finally {
             setIsActionLoading(false);
         }
@@ -193,6 +198,19 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                     </div>
                 </div>
 
+                {/* Toast notification when PDF is auto-downloaded for WhatsApp */}
+                {shareNotification && (
+                    <div className="mx-4 sm:mx-6 mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs sm:text-sm text-emerald-900 flex items-center justify-between shadow-sm animate-fade-in shrink-0">
+                        <div className="flex items-center gap-2.5">
+                            <CheckCircle size={18} className="text-emerald-600 shrink-0" />
+                            <span className="font-semibold leading-relaxed">{shareNotification}</span>
+                        </div>
+                        <button onClick={() => setShareNotification(null)} className="text-emerald-500 hover:text-emerald-700 p-1 shrink-0 ml-2">
+                            <X size={16} />
+                        </button>
+                    </div>
+                )}
+
                 {/* Preview Content */}
                 <div ref={wrapperRef} className="flex-1 overflow-auto p-2 sm:p-8 bg-slate-200/50 flex flex-col items-center">
                     <div 
@@ -253,3 +271,4 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 };
 
 export default DocumentPreviewModal;
+
